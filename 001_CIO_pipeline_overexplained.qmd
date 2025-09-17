@@ -1,0 +1,435 @@
+---
+title: "001_CIO_pipeline_overexplained"
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    code-tools: true
+    code-overflow: wrap
+editor: source
+execute: 
+  warning: false
+  echo: false
+  freeze: auto
+toc: true
+date-modified: last-modified
+---
+
+```{r}
+#| echo: false
+#| output: false
+#| label: setup-chunk
+
+#setup chunk
+
+rm(list=ls()) ## removes existing files in environment
+
+#libraries
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(SingleCellExperiment)
+library(BiocManager)
+library(ggplot2)
+library(sctransform)
+library(SeuratObject)
+library(scater)
+library(scran)
+library(Matrix)
+library(scDblFinder)
+library(rmarkdown)
+library(reshape2)
+library(ggforce)
+library(scRepertoire)
+library(stringr)
+library(SingleR)
+library(nichenetr)
+library(celldex)
+library(glmGamPoi)
+library(clustree)
+library(dittoSeq)
+library(Azimuth)
+
+cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors that we can use for visualizations
+```
+
+## Purpose
+
+001_CIO_pipeline is intended to serve as a basic pipeline allowing a user with basic R skills to analyze 10X scRNAseq using Seurat. Required input files are cellranger output files, as will typically be received from a sequencing facility. The initial test will use one of the human PBMC datasets from 10X, available at https://www.10xgenomics.com/datasets/10-k-peripheral-blood-mononuclear-cells-pbm-cs-from-a-healthy-donor-single-indexed-3-1-standard-4-0-0. We will begin with the filtered feature barcode matrix. This setup is heavily based upon the Seurat tutorial, available at https://satijalab.org/seurat/articles/pbmc3k_tutorial. 
+
+## Quarto
+
+This pipeline was prepared using Quarto, which allows you to generate a single file alternating text chunks and code chunks. The file can then be rendered as an html document, which can include both text and figures generated in R. 
+
+```{r}
+#| label: loading-data-and-generating-Seurats
+#| output: false
+#| echo: false
+
+## anything after a # is not part of the code, but just a note to the reader
+## we recommend including a lot of notes and explanations of what you are doing throughout your analysis, either in the code chunks or text chunks
+## future you will be thankful
+
+data <- Read10X(data.dir='PBMC_10k/filtered_feature_bc_matrix') ## change to your data directory
+
+obj <- CreateSeuratObject(counts=data,
+                          project='pbmc10k', ## change project name if you wish
+                          min.cells=3) ## filtering only genes present in a minimum of 3 cells, this filter should be excluded if you are planning to merge multiple objects
+
+obj[['percent.mt']] <- PercentageFeatureSet(obj, pattern ='^MT-') ## adding in percent.mt as a QC metric: pattern is ^MT- for human, ^mt- for mouse
+
+## you may wish to include other details in the metadata of your Seurat object (experiment ID, timepoint, patient ID, etc.)
+## especially important if you are planning on merging multiple objects later (different captures, different sequencing runs, etc.)
+## make your life easier by including this information at the earliest stages!
+
+obj[['timepoint']] <- 0 ## dummy variable for illustration
+obj[['treatment']] <- 'control' ## dummy variable for illustration
+
+```
+
+
+```{r}
+#| label: prefilter-QC
+#| output: false
+#| echo: false
+
+## generating violin plots of our three standard QC metrics
+## using colorblind-friendly palette for ease of visibility and because Seurat default is ugly
+
+QC_prefilter <- VlnPlot(obj,
+                        features=c('nFeature_RNA', 'nCount_RNA', 'percent.mt'),
+                        ncol=3,
+                        group.by='orig.ident',
+                        cols=cbf_3) 
+```
+
+## Initial QC and filtering
+
+First, we visualize the standard QC metrics, as shown in @fig-QC-prefilter. In general, good quality data will be tightly distributed for all three QC metrics. Each dot represents a droplet that we hope contains a single, high-quality cell, but some will need to be filtered out. Droplets with unusually high nFeature_RNA and nCount_RNA may represent doublets, where two cells were co-encapsulated in a single droplet. Droplets with very low nFeature_RNA and nCount_RNA are likely droplets without an intact cell, instead containing a dead/dying cell or cell debris. High percent.mt values are also indicative of dead/dying cells.
+
+```{r}
+#| label: fig-QC-prefilter
+#| fig-cap: 'QC metrics pre-filtration'
+
+QC_prefilter
+```
+In general, it is better to be overly generous rather than overly stringent: QC metrics can vary between cell types, captures, healthy vs disease, and cell state (ex. resting vs activated T-cells). If some low quality cells are included in the downstream analysis, they often cluster separately and can be removed later.
+
+```{r}
+#| label: threshold-calculations
+#| output: false
+#| echo: false
+
+## calculating thresholds as median + 3 MAD
+## you can change thresholds here if you wish (ex. median + 5 MAD)
+
+median_nCount_RNA <- median(obj$nCount_RNA)
+mad_nCount_RNA <- mad(obj$nCount_RNA)
+
+median_percent.mt <- median(obj$percent.mt)
+mad_percent.mt <- mad(obj$percent.mt)
+
+median_nFeature_RNA <- median(obj$nFeature_RNA)
+mad_nFeature_RNA <- mad(obj$nFeature_RNA)
+
+threshold_nCount_RNA <- c(median_nCount_RNA + 3*mad_nCount_RNA)
+threshold_percent.mt <- c(median_percent.mt + 3*mad_percent.mt)
+threshold_nFeature_RNA <- c(median_nFeature_RNA + 3*mad_nFeature_RNA)
+
+
+```
+
+## Doublet identification
+
+Doublets are inevitably present in a 10X capture: we should aim to filter them out, if possible. We can use a package called scDblFinder, which classifies cells as either singlets or doublets based on their transcriptomes.
+
+```{r}
+#| label: scDblFinder
+#| output: false
+#| echo: false
+
+obj.sce <- as.SingleCellExperiment(obj) ## scDblFinder requires a single cell experiment object (a different package for scRNAseq analysis) instead of a Seurat object
+obj.sce <- scDblFinder(obj.sce) ## run scDblFinder
+obj$scDblFinder.score <- obj.sce$scDblFinder.score ## transfer scores to Seurat object as a metadata column named scDblFinder.score
+obj$scDblFinder.class <- obj.sce$scDblFinder.class ## transfer classes to Seurat object as a metadata column named scDblFinder.class
+rm(obj.sce) ## remove sce object
+
+violin_doublet <- VlnPlot(obj,
+                          features='nCount_RNA',
+                          group.by='scDblFinder.class',
+                          cols=cbf_3)
+```
+As shown in @fig-violin-doublet, droplets classified as doublets tend to have higher RNA counts, as expected.
+
+```{r}
+#| label: fig-violin-doublet
+#| fig-cap: 'Violin plots of nCount_RNA, grouped by doublet class'
+
+violin_doublet + NoLegend()
+```
+
+```{r}
+#| label: QC-filtering
+#| output: false
+#| echo: false
+
+## you can change filtration metrics here, if you wish to use a numerical cutoff (ex. mitochondrial cutoff at 5%)
+## reminder that in general, we prefer to keep too many cells rather than too few
+
+obj <- subset(obj, subset = nFeature_RNA > 200 & ## retain only cells with at least 200 different genes
+                nFeature_RNA < threshold_nFeature_RNA &
+                nCount_RNA < threshold_nCount_RNA &
+                percent.mt < threshold_percent.mt &
+                scDblFinder.class %in% 'singlet')
+
+QC_postfilter <- VlnPlot(obj,
+                         features=c('nFeature_RNA', 'nCount_RNA', 'percent.mt'),
+                         ncol=3,
+                         group.by='orig.ident',
+                         cols=cbf_3)
+```
+
+We can visualize QC metrics post-filtration in @fig-violin-postfilter.
+
+```{r}
+#| label: fig-violin-postfilter
+#| fig-cap: 'Violin plots of QC metrics post-filtration'
+
+QC_postfilter + NoLegend()
+```
+Basic QC has now been completed: we have filtered out doublets and low quality cells, choosing fairly permissive filters.
+
+## Normalization, highly variable features, scaling data, PCA, clustering, and UMAP
+
+This is a series of standard steps to aid in interpretation and visualization of scRNAseq data using Seurat, which are explained more fully in the Seurat tutorial linked earlier. We will show both the traditional method and the newer SCTransform.
+
+```{r}
+#| label: matrix-to-umap-older-version
+#| output: false
+#| echo: false
+
+obj %>%
+  NormalizeData() %>%
+  FindVariableFeatures(nfeatures=3000) %>% ## default is 2000
+  ScaleData() %>% ## by default, this only scales 3000 highly variable features we identified in the previous line
+  RunPCA(dims=1:30) %>% ## you can change the number of PCs here, but it is better to err on the side of using too many
+  FindNeighbors(dims=1:30, reduction='pca') %>%
+  FindClusters(resolution=seq(0.1, 1, 0.1), cluster.name=c('res0.1',
+                                                           'res0.2',
+                                                           'res0.3',
+                                                           'res0.4',
+                                                           'res0.5',
+                                                           'res0.6',
+                                                           'res0.7',
+                                                           'res0.8',
+                                                           'res0.9',
+                                                           'res1.0')) %>% ## here, we are trying 10 different resolutions from 0.1 to 1.0
+  RunUMAP(dims=1:30) -> obj
+```
+As a first look at the data, we will show a UMAP colored by clusters at resolution 0.3. @fig-umap-res-03 shows good separation of different clusters, with 12 clusters in total. Recall that UMAPs are a 2-dimensional representation of data in much higher dimensions (here, 20,573 different dimensions) and aim to maintain local structure at the expense of global structure. They should never be over-interpreted.
+
+```{r}
+#| label: fig-umap-res-03
+#| fig-cap: 'UMAP colored by clusters at resolution 0.3'
+
+DimPlot(obj,
+        group.by='res0.3', ## grouping by clusters at resolution 0.3: each group gets a different color
+        reduction='umap',
+        cols=cbf_3, ## using colorblind friendly palette
+        label=TRUE) + NoLegend()
+```
+We have tried finding clusters at resolutions 0.1-1.0. To understand how clusters at each of these resolutions relate to each other, we can generate a clustree, as shown in @fig-clustree. As an example, this shows that when going from resolution 0.1 (top row) to 0.2 (next row), two clusters (1 and 3) each split into 2 new clusters (with new numbering of 1, 3, 5, and 6). We can see that some clusters are very consistent: for example, the cluster numbered 5 at resolution 0.1 does not change at higher resolutions, suggesting no substructure. At the highest resolutions (0.8-1.0), there is some unsettled branching and merging behavior in the branches downstream from what was cluster 1 at resolution 0.1, suggestive of over-clustering. In general, there may be no one 'correct' resolution: more clusters may represent real biological substructure, but could also represent over-clustering. For now, we will focus on the resolution of 0.3.
+
+```{r}
+#| label: fig-clustree
+#| fig-cap: 'Clustree from resolutions 0.1-1.0'
+
+clustree(obj,
+         prefix='res')
+```
+## Cell type identification
+
+How can we identify cell types? There are several approaches. First, we can use prior biological knowledge to identify cell types. @fig-known-marker-genes shows expression of four selected marker genes: CD3D for T cells, CD79A for B cells, NKG7 for NK cells (though also found in cytotoxic CD8+ T cells), and FCN1 for monocytes. These markers alone clearly identify B cell and monocyte clusters. T cells and NK cells can also be seen, albeit with some overlap. T and NK cells do not typically separately cleanly, as there are significant transcriptomic overlaps between NK cells, NKT cells, and cytotoxic CD8+ T cells.
+
+```{r}
+#| label: fig-known-marker-genes
+#| fig-cap: 'UMAPs of expression levels of four selected marker genes'
+
+FeaturePlot(obj,
+            features=c('CD3D', 'CD79A', 'NKG7', 'FCN1'),
+            reduction='umap')
+```
+We can also find marker genes in an unbiased manner, as shown in the next code chunk.
+
+```{r}
+#| label: markers-res-03
+#| output: false
+#| echo: false
+
+markers.03 <- FindAllMarkers(obj, ## this function finds differentially expressed genes between different groups within the data
+                             group.by='res0.3', ## here, we are grouping cells by cluster (at resolution 0.3)
+                             only.pos=TRUE) ## only keeping positive marker genes
+
+markers.03 %>%
+  group_by(cluster) %>%
+  dplyr::filter(avg_log2FC > 1) %>% ## retain only marker genes with a log2FC > 1
+  slice_head(n=5) %>% ## retain top 5 genes per cluster
+  ungroup() -> top5.markers.03
+```
+@fig-heatmap-markers-03 plots the top 5 marker genes per cluster at resolution 0.3. From this, we tentatively give clusters biologically meaningful names:
+   0: CD14+ monocytes
+   1: CD4 T cells, naive (?)
+   2: CD8 T cells, naive (?)
+   3: CD4 T cells, naive (?)
+   4: NK cells
+   5: B cells
+   6: B cells
+   7: NK cells
+   8: CD16+ monocytes
+   9: T cells (?)
+   10: unknown
+   11: unknown
+
+```{r}
+#| label: fig-heatmap-markers-03
+#| fig-cap: 'Heatmap of top 5 marker genes per cluster at resolution 0.3'
+
+DoHeatmap(obj,
+          features=top5.markers.03$gene,
+          group.by='res0.3',
+          group.colors=cbf_3) + NoLegend() + scale_fill_viridis() ## viridis scale is less ugly than the default Seurat scale
+```
+There are also tools to compare our data to reference datasets. First, we will use a tool called SingleR, which compares data to references available from the celldex package.
+
+```{r}
+#| label: singler
+#| output: false
+#| echo: false
+
+singler_ref <- celldex::BlueprintEncodeData() ## get the SingleR reference
+
+singler_results <- SingleR::SingleR(
+  test=GetAssayData(obj, assay='RNA', layer='data'),
+  ref=singler_ref,
+  labels=singler_ref@colData@listData$label.main) ## generate SingleR classifications of each cell
+
+obj$singler.cell.type <- singler_results$labels ## transfer SingleR cell labels to a new metadata column called 'singler.cell.type'
+```
+
+@fig-umap-singler shows a UMAP now colored by cell type as called by SingleR. Cell types broadly agree with our earlier annotations: clear populations of monocytes and B cells, with NK cells, CD4+ T-cells, and CD8+ T-cells showing significant separation with some overlap.
+
+```{r}
+#| label: fig-umap-singler
+#| fig-cap: 'UMAP colored by SingleR cell type'
+
+DimPlot(obj,
+        group.by='singler.cell.type', ## grouping by singler.cell.type, with each group getting a different color
+        cols=cbf_3, ## using colorblind-friendly palette
+        reduction='umap')
+```
+SingleR has called some unexpected cell types, such as adipocytes, epithelial cells, and neurons. We can plot a barchart to quantify the cell counts per SingleR cell type using the very useful dittoSeq package: Seurat does not have a native barchart function. @fig-barchart-singler-cell-type shows that the unexpected cell types are present at near-zero abundances. Mapping to any reference transcriptome may produce unexpected results, but should not be a major concern if they are present at minimal levels.
+
+```{r}
+#| label: fig-barchart-singler-cell-type
+#| fig-cap: 'Bar chart quantifying cell types as called by SingleR'
+
+dittoBarPlot(obj,
+             group.by='singler.cell.type',
+             var='singler.cell.type',
+             scale='count')
+```
+
+We can also use the Azimuth package and map to a human PBMC reference: available references are found at https://azimuth.hubmapconsortium.org/. The human PBMC reference we are using has three levels of granularity. Azimuth and SingleR have the same aim (identifying cell types), so you may consider using both packages (looking for areas of agreement and disagreement) or you may prefer using only one package that has the best references for your dataset.
+
+```{r}
+#| label: Azimuth
+#| output: false
+#| echo: false
+
+obj <- RunAzimuth(obj,
+                  reference='pbmcref') ## name of the Azimuth reference we are using
+```
+
+@fig-umap-azimuth-l1 shows a UMAP colored by Azimuth level 1 cell type (the broadest groupings). The Azimuth predictions largely agree with the SingleR predictions and our manual annotations.
+
+```{r}
+#| label: fig-umap-azimuth-l1
+#| fig-cap: 'UMAP colored by Azimuth level 1 cell type'
+
+DimPlot(obj,
+        group.by='predicted.celltype.l1', ## Azimuth added in 3 metadata columns with cell type predictions: here, we are grouping by 'predicted.celltype.l1'
+        cols=cbf_3,
+        reduction='umap')
+```
+## SCTransform
+
+An alternative method to the normalization, finding highly variable features, and scaling data shown above is a newer function within Seurat called SCTransform. Below is code to run SCTransform, again testing clustering resolutions from 0.1 to 1.0.
+
+```{r}
+#| label: matrix-to-umap-sctransform
+#| output: false
+#| echo: false
+
+options(future.globals.maxSize = 2 * 1e9) ## set globals.maxSize to 2GB
+
+obj %>%
+  SCTransform() %>%
+  RunPCA(dims=1:30) %>%
+  FindNeighbors(dims=1:30, reduction='pca') %>%
+  FindClusters(resolution=seq(0.1, 1, 0.1), cluster.name=c('sc0.1',
+                                                           'sc0.2',
+                                                           'sc0.3',
+                                                           'sc0.4',
+                                                           'sc0.5',
+                                                           'sc0.6',
+                                                           'sc0.7',
+                                                           'sc0.8',
+                                                           'sc0.9',
+                                                           'sc1.0')) %>% ## testing 10 resolutions from 0.1-1.0
+  RunUMAP(dims=1:30, reduction.name='sc.umap') -> obj
+```
+How does the SCTransform UMAP compare to the originally calculated UMAP? As shown in @fig-umap-normal-vs-sctransform, they identify a similar number of clusters (12 vs 11). The structures look quite different, as is expected: this should not be interpreted as an important difference between the two methods. A UMAP is a cartoon to help visualize data and aid in hypothesis generation but it is not particularly meaningful of itself.
+
+```{r}
+#| label: fig-umap-normal-vs-sctransform
+#| fig-cap: 'UMAPs generated using traditional workflow (left) vs SCTransform (right)'
+
+DimPlot(obj, ## plotting first UMAP
+        reduction='umap',
+        group.by='res0.3', ## grouping by res0.3 (calculated originally)
+        cols=cbf_3) | DimPlot(obj, ## plotting second UMAP
+                              reduction='sc.umap',
+                              group.by='sc0.3', ## grouping by sc0.3 (calculated by SCTransform)
+                              cols=cbf_3)
+```
+How do clusters compare? @fig-barchart-normal-vs-sctransform compares clusters from the original analysis to those from the SCTransform analysis: the x-axis represents the original clusters, while the colors represent the new clusters. In general, the two methods agree very closely: almost all cells in cluster 0 from our original analysis (first bar) are called as cluster 0 in the new analysis (orange color). A notable difference is clusters 5 and 6, which we originally identified as B cells: both analyses suggest there are two subclusters within the B cell cluster, but differ on how to split the cells between those two clusters. It would take a more in-depth analysis of the B cell population to determine which, if either, of the approaches has identified biologically meaningful substructure.
+
+```{r}
+#| label: fig-barchart-normal-vs-sctransform
+#| fig-cap: 'Barchart comparing clusters from original analysis (x-axis), colored by clusters from SCTransform analysis'
+
+dittoBarPlot(obj,
+             var='sc0.3',
+             group.by='res0.3',
+             retain.factor.levels=TRUE) + ylab('Proportion of cells')
+```
+
+
+
+
+
+```{r}
+#| label: saving
+#| output: false
+#| echo: false
+
+SaveSeuratRds(obj, file='PBMC_10k/obj.rds')
+```
+
+
+
+
+
+
+
