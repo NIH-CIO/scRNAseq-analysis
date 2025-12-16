@@ -1,0 +1,231 @@
+---
+title: "004_CIO_pipeline_VDJ"
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    code-tools: true
+    code-overflow: wrap
+editor: source
+execute: 
+  warning: false
+  echo: false
+  freeze: auto
+toc: true
+date-modified: last-modified
+---
+
+```{r}
+#| echo: false
+#| output: false
+#| label: setup-chunk
+
+#setup chunk
+
+rm(list=ls()) ## removes existing files in environment
+
+#libraries
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(SingleCellExperiment)
+library(BiocManager)
+library(ggplot2)
+library(sctransform)
+library(SeuratObject)
+library(scater)
+library(scran)
+library(Matrix)
+library(scDblFinder)
+library(rmarkdown)
+library(reshape2)
+library(ggforce)
+library(scRepertoire)
+library(stringr)
+library(SingleR)
+library(nichenetr)
+library(celldex)
+library(glmGamPoi)
+library(clustree)
+library(dittoSeq)
+library(Azimuth)
+
+options(future.globals.maxSize = 2 * 1e9) ## set globals.maxSize to 2GB
+set.seed(97)
+cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors that we can use for visualizations
+```
+
+## Purpose
+
+Sometimes, we will generate two libraries per sample: a gene expression library (GEX) and a TCR or BCR library (VDJ). We will use the package [scRepertoire](https://www.borch.dev/uploads/screpertoire/) to include TCR sequencing information with our Seurat object: we highly recommend looking at the website to understand how you can visualize your VDJ data. 
+
+```{r}
+#| label: loading-data-and-VDJ
+#| output: false
+#| echo: false
+
+## anything after a # is not part of the code, but just a note to the reader
+
+## cells in this capture were also labeled with barcoded antibodies, which shows up as ADT assay: we will not be using this data for this pipeline
+
+data <- Read10X(data.dir='/data/NCI-CIO/prinsds/CIO_pipeline_files/VB_003_P5/outs/per_sample_outs/VB_003_P5/count/sample_filtered_feature_bc_matrix') ## change this to your data directory
+
+obj <- CreateSeuratObject(counts=data,
+                          project='pbmc10k', ## change project name if you wish
+                          min.cells=3) ## filtering only genes present in a minimum of 3 cells, this filter can be excluded if you are planning to merge multiple objects
+
+obj[['percent.mt']] <- PercentageFeatureSet(obj, pattern ='^MT-') ## adding in percent.mt as a QC metric: pattern is ^MT- for human, ^mt- for mouse
+
+## include any other relevant metadata here
+
+obj[['timepoint']] <- 0 ## dummy variable for illustration
+obj[['treatment']] <- 'control' ## dummy variable for illustration
+
+data.VDJ <- read.csv('/data/NCI-CIO/prinsds/CIO_pipeline_files/VB_003_P5/outs/per_sample_outs/VB_003_P5/vdj_t/filtered_contig_annotations.csv') ## reading in VDJ annotations
+
+data.TCR <- combineTCR(data.VDJ, ## product of read.csv in the previous line
+                   removeNA = FALSE, ## this will remove any chain without values
+                   removeMulti = FALSE, ## this will remove barcodes with greater than 2 chains
+                   filterMulti = FALSE) ## this will allow for selection of the 2 corresponding chains with the highest expression for a single barcode
+
+obj <- combineExpression(data.TCR, ## product of combineTCR
+                               obj, ## your Seurat object
+                               cloneCall = 'strict', 
+                               chain = 'both', 
+                               group.by = NULL,
+                               proportion = TRUE,
+                               filterNA = FALSE,
+                               cloneSize = c(Small=0.001, Medium=0.01, Large=0.1, Hyperexpanded=1), ## sets boundaries for clone sizes: can be changed if desired
+                               addLabel = FALSE)
+
+## this is all the code you need to add VDJ data to your Seurat object, after which you can process as a normal Seurat object (see 002_CIO_pipeline_SCTransform, for example)
+## the rest of this document performs standard QC and Seurat processing, then shows a few examples of how to use scRepertoire to visualize VDJ data
+```
+
+```{r}
+#| label: threshold-calculations
+#| output: false
+#| echo: false
+
+## calculating thresholds as median + 3 MAD
+
+median_nCount_RNA <- median(obj$nCount_RNA)
+mad_nCount_RNA <- mad(obj$nCount_RNA)
+
+median_percent.mt <- median(obj$percent.mt)
+mad_percent.mt <- mad(obj$percent.mt)
+
+median_nFeature_RNA <- median(obj$nFeature_RNA)
+mad_nFeature_RNA <- mad(obj$nFeature_RNA)
+
+threshold_nCount_RNA <- c(median_nCount_RNA + 3*mad_nCount_RNA)
+threshold_percent.mt <- c(median_percent.mt + 3*mad_percent.mt)
+threshold_nFeature_RNA <- c(median_nFeature_RNA + 3*mad_nFeature_RNA)
+
+
+```
+
+```{r}
+#| label: scDblFinder
+#| output: false
+#| echo: false
+
+obj <- JoinLayers(obj)
+obj.sce <- as.SingleCellExperiment(obj) ## scDblFinder requires a single cell experiment object instead of a Seurat object
+obj.sce <- scDblFinder(obj.sce) ## run scDblFinder
+obj$scDblFinder.score <- obj.sce$scDblFinder.score ## transfer scores to Seurat object
+obj$scDblFinder.class <- obj.sce$scDblFinder.class ## transfer classes to Seurat object
+rm(obj.sce) ## remove sce object
+
+violin_doublet <- VlnPlot(obj,
+                          features='nCount_RNA',
+                          group.by='scDblFinder.class',
+                          cols=cbf_3)
+```
+
+```{r}
+#| label: QC-filtering
+#| output: false
+#| echo: false
+
+## you can change filtration metrics here, if you wish (ex. set a mitochondrial cutoff of 5%)
+
+obj <- subset(obj, subset = nFeature_RNA > 200 & ## additional filter: minimum of 200 genes per cell
+                nFeature_RNA < threshold_nFeature_RNA &
+                nCount_RNA < threshold_nCount_RNA &
+                percent.mt < threshold_percent.mt &
+                scDblFinder.class %in% 'singlet')
+
+QC_postfilter <- VlnPlot(obj,
+                         features=c('nFeature_RNA', 'nCount_RNA', 'percent.mt'),
+                         ncol=3,
+                         group.by='orig.ident',
+                         cols=cbf_3)
+```
+
+```{r}
+#| label: sctransform
+#| output: false
+#| echo: false
+
+obj %>%
+  SCTransform() %>%
+  RunPCA(dims=1:30) %>%
+  FindNeighbors(dims=1:30, reduction='pca') %>%
+  FindClusters(resolution=0.3) %>%
+  RunUMAP(dims=1:30) -> obj
+```
+
+## UMAP
+
+@fig-umap-res-03
+
+```{r}
+#| label: fig-umap-res-03
+#| fig-cap: 'UMAP at resolution 0.3'
+
+DimPlot(obj,
+        group.by='SCT_snn_res.0.3',
+        reduction='umap',
+        cols=cbf_3,
+        label=FALSE)
+```
+## scRepertoire functions
+
+scRepertoire has many different functions to visualize and understand clonotypes in a sample: we encourage you to look at the vignettes on the website. As one example, @fig-clonal-occupy quantifies how different sized clones occupy different clusters. We can see that cluster 0 has many cells classified as being in small clones (less than 0.1% of the total number of T cells), while cluster 2 has many cells in large clones (1-10% of all T cells). The dataset we are using also contains other PBMCs: cluster 5 is entirely NA, indicating that it does not contain T cells.
+
+```{r}
+#| label: fig-clonal-occupy
+#| fig-cap: 'Example of clonalOccupy, grouped by cluster'
+
+clonalOccupy(obj,
+             x.axis='SCT_snn_res.0.3',
+             na.include=TRUE, ## whether to include NA or not
+             palette='viridis') ## you can use any palette from hcl.pals
+```
+Another useful visualization is clonalOverlap, as shown in @fig-clonal-overlap. This calculates how many clones are in common between any two groups: here we can see 97 clones found in both cluster 1 and cluster 3, for example. This can be very useful to track clonality across multiple timepoints from a single patient.
+
+```{r}
+#| label: fig-clonal-overlap
+#| fig-cap: 'Example of clonalOverlap, grouped by cluster'
+
+clonalOverlap(obj,
+              cloneCall='strict',
+              group.by='SCT_snn_res.0.3',
+              method='raw',
+              palette='viridis')
+```
+
+
+
+```{r}
+#| label: saving
+#| output: false
+#| echo: false
+
+#SaveSeuratRds(obj, 'your_file_path')
+```
+
+
+

@@ -1,0 +1,258 @@
+---
+title: "006_CIO_pipeline_visualizations"
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    code-tools: true
+    code-overflow: wrap
+editor: source
+execute: 
+  warning: false
+  echo: false
+  freeze: auto
+toc: true
+date-modified: last-modified
+---
+
+```{r}
+#| echo: false
+#| output: false
+#| label: setup-chunk
+
+#setup chunk
+
+rm(list=ls()) ## removes existing files in environment
+
+#libraries
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(SingleCellExperiment)
+library(BiocManager)
+library(ggplot2)
+library(sctransform)
+library(SeuratObject)
+library(scater)
+library(scran)
+library(Matrix)
+library(scDblFinder)
+library(rmarkdown)
+library(reshape2)
+library(ggforce)
+library(scRepertoire)
+library(stringr)
+library(SingleR)
+library(nichenetr)
+library(celldex)
+library(glmGamPoi)
+library(clustree)
+library(dittoSeq)
+library(Azimuth)
+library(enrichR)
+
+options(future.globals.maxSize = 2 * 1e9) ## set globals.maxSize to 2GB
+set.seed(97)
+cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors that we can use for visualizations
+```
+
+## Purpose
+
+There are many ways to plot data using Seurat: this script will show some examples of the most commonly used plots. We will use the integrated object that we generated and saved in 003_CIO_pipeline_integration.
+
+```{r}
+#| label: loading
+#| output: false
+#| echo: false
+
+## loading Seurat object
+
+obj <- LoadSeuratRds('obj.rds')
+```
+
+```{r}
+#| label: cluster-markers
+#| output: false
+#| echo: false
+
+## calculating cluster markers as an example of genes to plot
+## note this will take some time to run
+
+markers.01 <- FindAllMarkers(obj,
+                             group.by='sc.0.1',
+                             only.pos=TRUE)
+
+markers.01 %>%
+  group_by(cluster) %>%
+  dplyr::filter(avg_log2FC > 1) %>%
+  slice_head(n=3) %>%
+  ungroup() -> top3.markers.01
+```
+
+
+## Dimensionality plot (UMAP)
+
+@fig-dim-plot
+
+```{r}
+#| label: fig-dim-plot
+#| fig-cap: 'Dimensionality plot (UMAP)'
+
+DimPlot(obj,
+        reduction='umap', ## if you have calculated multiple reductions, specify which one to use here
+        cols=cbf_3, ## change colors
+        group.by='sc.0.1', ## variable by which to group cells
+        label=TRUE) ## puts numerical labels on the center of each group
+```
+
+## Heatmap
+
+@fig-heatmap-markers-01
+
+```{r}
+#| label: fig-heatmap-markers-01
+#| fig-cap: 'Heatmap of top 3 markers per cluster at resolution 0.1'
+
+DoHeatmap(obj,
+          features=top3.markers.01$gene, ## list of features: here, we are using the markers we calculated and filtered, but you could change for a list of genes of your choice
+          group.by='sc.0.1',
+          group.colors=cbf_3) + NoLegend() + scale_fill_viridis() ## changing to viridis scale instead of Seurat default
+```
+## Dotplot
+
+@fig-dotplot-markers-01
+
+```{r}
+#| label: fig-dotplot-markers-01
+#| fig-cap: 'Dotplot of top 3 markers per cluster at resolution 0.1'
+
+DotPlot(obj,
+        features=unique(top3.markers.01$gene), ## dotplot fails if the vector of features has any repeated genes; specifying 'unique' here prevents this
+        group.by='sc.0.1',
+        cols='RdBu') + theme(axis.text.x = element_text(angle=90, vjust=0.5, hjust=1)) ## rotating x-axis labels
+```
+## Violin plot
+
+@fig-violin-plot-single
+
+```{r}
+#| label: fig-violin-plot-single
+#| fig-cap: 'Violin plot of a single marker'
+
+VlnPlot(obj,
+        features='CD3D', ## selected marker
+        group.by='sc.0.1',
+        assay='SCT',
+        layer='data', ## plotting data layer (SCTransform default), yields distribution with discrete values
+        cols=cbf_3) + NoLegend()
+```
+@fig-violin-plot-single-scale-data
+
+```{r}
+#| label: fig-violin-plot-single-scale-data
+#| fig-cap: 'Violin plot of a single marker'
+
+VlnPlot(obj,
+        features='CD3D', ## selected marker
+        group.by='sc.0.1',
+        assay='SCT',
+        layer='scale.data', ## plotting scaled data instead: smoother distribution
+        cols=cbf_3) + NoLegend()
+```
+@fig-violin-multiple-markers
+
+```{r}
+#| label: fig-violin-multiple-markers
+#| fig-cap: 'Violin plot of multiple markers'
+
+VlnPlot(obj,
+        features=c('CD3D', 'CD4', 'CD8A', 'CD79A'),
+        group.by='sc.0.1',
+        assay='SCT',
+        layer='scale.data',
+        stack=TRUE, ## plots are stacked instead of being side-by-side
+        flip=TRUE,
+        cols=cbf_3) + NoLegend()
+```
+
+## Feature plot
+
+@fig-feature-plot
+
+```{r}
+#| label: fig-feature-plot
+#| fig-cap: 'Feature plot of CD3D expression'
+
+FeaturePlot(obj,
+            features='CD3D',
+            reduction='umap')
+```
+## Bar charts
+
+@fig-bar-chart-scaled
+
+```{r}
+#| label: fig-bar-chart-scaled
+#| fig-cap: 'Bar chart of SingleR cell types per cluster as a proportion of cells'
+
+## using dittoSeq package
+
+dittoBarPlot(obj,
+             var='singler.cell.type', ## variable to plot
+             group.by='sc.0.1', ## variable by which to group
+             retain.factor.levels=TRUE,
+             scale='percent') + ylab('Proportion of cells') ## by default, scale incorrectly says 'Percent of cells'
+```
+@fig-bar-chart-count
+
+```{r}
+#| label: fig-bar-chart-count
+#| fig-cap: 'Bar chart of SingleR cell types per cluster as absolute counts'
+
+## using dittoSeq package
+
+dittoBarPlot(obj,
+             var='singler.cell.type', ## variable to plot
+             group.by='sc.0.1', ## variable by which to group
+             retain.factor.levels=TRUE,
+             scale='count')
+```
+## DEenrichRPlot
+
+@fig-DEEnrichRplot
+
+```{r}
+#| label: fig-DEEnrichRplot
+#| fig-cap: 'DEencrichRplot of MSigDB_Hallmark_2020, comparing clusters 0 and 1'
+
+Idents(obj) <- 'sc.0.1'
+
+DEenrichRPlot(obj,
+              ident.1=1,
+              ident.2=0, ## comparing clusters 0 and 1
+              balanced=TRUE, ## if TRUE, will return both positive and negative pathways
+              max.genes=200,
+              enrich.database='MSigDB_Hallmark_2020') ## choose a database from the enrichR website
+```
+## Exporting figures
+
+As we have set up the pipeline in Quarto, you can render the script to generate an html document with all the figures inline. This html document can be shared with collaborators, or you can copy and paste figures from it for use in presentations. If you want higher quality graphics, you can use the ggsave function to export figures. There are options within ggsave to specify the size, quality, and file type.
+
+```{r}
+#| label: exporting-png
+#| output: false
+#| echo: false
+
+p <- DotPlot(obj, ## creating our earlier dotplot as an object
+        features=unique(top3.markers.01$gene),
+        group.by='sc.0.1',
+        cols='RdBu') + theme(axis.text.x = element_text(angle=90, vjust=0.5, hjust=1))
+
+ggsave(p,
+       filename='006_dotplot.png',
+       path='/data/NCI-CIO/prinsds/')
+```
+
+
+

@@ -1,0 +1,152 @@
+---
+title: "005_CIO_pipeline_hashing"
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    code-tools: true
+    code-overflow: wrap
+editor: source
+execute: 
+  warning: false
+  echo: false
+  freeze: auto
+toc: true
+date-modified: last-modified
+---
+
+```{r}
+#| echo: false
+#| output: false
+#| label: setup-chunk
+
+#setup chunk
+
+rm(list=ls()) ## removes existing files in environment
+
+#libraries
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(SingleCellExperiment)
+library(BiocManager)
+library(ggplot2)
+library(sctransform)
+library(SeuratObject)
+library(scater)
+library(scran)
+library(Matrix)
+library(scDblFinder)
+library(rmarkdown)
+library(reshape2)
+library(ggforce)
+library(scRepertoire)
+library(stringr)
+library(SingleR)
+library(nichenetr)
+library(celldex)
+library(glmGamPoi)
+library(clustree)
+library(dittoSeq)
+library(Azimuth)
+
+options(future.globals.maxSize = 2 * 1e9) ## set globals.maxSize to 2GB
+set.seed(97)
+cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors that we can use for visualizations
+```
+
+## Purpose
+
+10X Genomics experiments may include cell hashing, where different samples are labeled with barcoded antibodies against a ubiquitously expressed cell surface protein, then pooled together. When analyzing these data, we need to classify each cell based on its hashtags.
+
+```{r}
+#| label: loading
+#| output: false
+#| echo: false
+
+## creating Seurat object
+
+data <- Read10X(data.dir='/data/NCI-CIO/prinsds/CIO_pipeline_files/VB_003_P5/outs/per_sample_outs/VB_003_P5/count/sample_filtered_feature_bc_matrix')
+obj <- CreateSeuratObject(data)
+obj[['percent.mt']] <- PercentageFeatureSet(obj, pattern ='^MT-')
+
+## generate HTO assay
+
+ADT <- LayerData(obj, 
+                 assay='RNA',
+                 layer='counts.Antibody Capture') # get antibody capture data as a matrix
+
+rownames(ADT) <- c('HTO1', 'HTO2', 'HTO3', 'HTO4', 'HTO5') # simplify rownames
+
+obj[['HTO']] <- CreateAssay5Object(counts = ADT) # add in as a new assay called HTO
+
+## we will use the function MULTIseqDemux to classify singlets, doublets, and negative cells
+
+obj %>%
+  NormalizeData(assay='HTO', 
+                normalization.method='CLR') %>%
+  MULTIseqDemux(assay='HTO', 
+                autoThresh=FALSE, 
+                quantile=0.7) -> obj ## you can modify the quantile if needed
+```
+
+Our Seurat object now has new columns: MULTI_ID and MULTI_classification. MULTI_ID will have seven levels: HTO1, HTO2, HTO3, HTO4, HTO5, doublet, and negative. MULTI_classification is more detailed: it will further define doublets as HTO1_HTO2, HTO1_HTO3, HTO1_HTO4, etc. At this point, we should visualize our hashtags to confirm that MULTIseqDemux has successfully classified cells. First, @fig-ridge-HTO1 shows a ridge plot for HTO1 expression, separated by MULTI_ID. Separation looks good overall: cells classified as HTO1 are uniformly HTO1 high, while cells classified as another HTO are all HTO1 negative. The doublet category contains many cells that are HTO1 positive, as expected. The negative category is mostly HTO1 negative, with some cells showing low HTO1 signal. If you are unhappy with the cutoff between negative and HTO1, you could test changing the threshold or setting autoThresh=TRUE within MULTIseqDemux. For this vignette, we will accept the cutoff chosen by the algorithm.
+
+```{r}
+#| label: fig-ridge-HTO1
+#| fig-cap: 'Ridge plot of HTO1 expression, separated by MULTI_ID'
+
+RidgePlot(obj,
+          assay='HTO',
+          features=c('HTO1'),
+          group.by='MULTI_ID',
+          cols=cbf_3)
+```
+@fig-ridge-plot-all shows ridge plots for all 5 hashing oligos, all of which look good.
+```{r}
+#| label: fig-ridge-plot-all
+#| fig-cap: 'Ridge plots for all hashing oligos'
+
+RidgePlot(obj,
+          assay='HTO',
+          features=c('HTO1', 'HTO2', 'HTO3', 'HTO4', 'HTO5'),
+          group.by='MULTI_ID',
+          cols=cbf_3)
+```
+You can also look at two oligos on a scatterplot, as shown in @fig-feature-scatter-HTO1-HTO2. Note that the cells in the top right of the plot, which are positive for both HTO1 and HTO2, are classified as doublets (correctly). Most of the cells on the axes are classified as either HTO1 or HTO2, as expected: the doublets in this area will be positive for a hashtag we haven't plotted here (ex. a HTO1_HTO3 or HTO2_HTO5 doublet).
+
+```{r}
+#| label: fig-feature-scatter-HTO1-HTO2
+#| fig-cap: 'Scatterplot comparing HTO1 and HTO2, colored by MULTI_ID'
+
+FeatureScatter(obj,
+               feature1='HTO1',
+               feature2='HTO2',
+               group.by='MULTI_ID',
+               cols=cbf_3) + ggtitle(NULL)
+```
+As a final check, @fig-violin-MULTI-ID shows a violin plot of nCount_RNA, separated by MULTI_ID. It is clear that doublets tend to have a higher distribution of RNA counts than do singlets, as would be expected; similarly, negative droplets tend to have a lower distribution of RNA counts than do singlets.
+
+```{r}
+#| label: fig-violin-MULTI-ID
+#| fig-cap: 'Violin plot of nCount_RNA, separated by MULTI_ID'
+
+VlnPlot(obj,
+        features='nCount_RNA',
+        group.by='MULTI_ID',
+        cols=cbf_3) + NoLegend()
+```
+Overall, the quality of the demultiplexing here looks good. Eventually, you will filter out the negative droplets and doublets: however, you should first perform the standard QC filtration steps (nCount_RNA, nFeature_RNA, percent.mt) and doublet removal (scDblFinder) before removing hashing doublets. It can also be useful to confirm that droplets called as doublets by hashing oligos and by scDblFinder largely overlap, though that overlap should not be complete. A doublet of a HTO1+ B-cell with a HTO2+ B-cell will likely be called as a singlet by scDblFinder, as the two cells are very similar transcriptionally. Conversely, a doublet of a HTO1+ T-cell with a HTO1+ B-cell will be called as a singlet by MULTIseqDemux but a doublet by scDblFinder. The most effective way to filter out all doublets in a hashing experiment is to run both functions on the unfiltered dataset, then filter only cells called as a singlet by both approaches.
+
+```{r}
+#| label: filtering-singlets
+#| output: false
+#| echo: false
+
+obj <- subset(obj, MULTI_ID %in% c('HTO1', 'HTO2', 'HTO3', 'HTO4', 'HTO5'))
+```
+
+
+
+
