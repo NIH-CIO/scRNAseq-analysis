@@ -1,0 +1,424 @@
+---
+title: "002_CIO_pipeline_SCTransform"
+output: html_document
+params:
+  input_dir: null
+  output_rds: null
+---
+
+
+```{r, include=FALSE}
+# rm(list=ls()) ## removes existing files in environment
+cfg <- params
+```
+
+
+```{r debug, eval=TRUE, echo=TRUE}
+
+debug_file <- "qmd_automate_debug.txt"
+write("DEBUG: starting document", file = debug_file)
+write(paste("params object:", capture.output(str(params))), file = debug_file, append = TRUE)
+write(paste("params object:", capture.output(str(params))), file = debug_file, append = TRUE)
+
+write(paste("input directory from cfg:", capture.output(cfg$input_dir)), file = debug_file, append = TRUE)
+write(paste("output file from cgf:", capture.output(cfg$output_rds)), file = debug_file, append = TRUE)
+
+```
+
+
+```{r}
+#| echo: false
+#| output: false
+#| label: load-libraries
+
+
+#libraries
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(SingleCellExperiment)
+library(BiocManager)
+library(ggplot2)
+library(sctransform)
+library(SeuratObject)
+library(scater)
+library(scran)
+library(Matrix)
+library(scDblFinder)
+library(rmarkdown)
+library(reshape2)
+library(ggforce)
+library(scRepertoire)
+library(stringr)
+library(SingleR)
+library(nichenetr)
+library(celldex)
+library(glmGamPoi)
+library(clustree)
+library(dittoSeq)
+library(Azimuth)
+
+options(Seurat.object.assay.calcn = TRUE)
+
+cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors that we can use for visualizations
+```
+
+## Purpose
+
+002_CIO_pipeline_SCTransform is intended to serve as a basic pipeline allowing a user with basic R skills to analyze 10X scRNAseq using Seurat. Required input files are cellranger output files, as will typically be received from a sequencing facility. The initial test will use one of the human PBMC datasets from 10X, available at https://www.10xgenomics.com/datasets/10-k-peripheral-blood-mononuclear-cells-pbm-cs-from-a-healthy-donor-single-indexed-3-1-standard-4-0-0. We will begin with the filtered feature bc matrix. This setup is heavily based upon the Seurat tutorial, available at https://satijalab.org/seurat/articles/pbmc3k_tutorial. 
+
+## Quarto
+
+This pipeline was prepared using Quarto, which allows you to generate a single file alternating text chunks and code chunks. The file can then be rendered as an html document, which can include both text and figures generated in R. 
+
+
+```{r debug-test2, eval=TRUE, echo=TRUE}
+debug_file <- "qmd_automate_debug_test2.txt"
+write("DEBUG: starting document", file = debug_file)
+write(paste("cfg object:", capture.output(str(cfg))), file = debug_file, append = TRUE)
+write(paste("cfg object:", capture.output(str(cfg))), file = debug_file, append = TRUE)
+
+write(paste("input directory:", capture.output(cfg$input_dir)), file = debug_file, append = TRUE)
+write(paste("output file:", capture.output(cfg$output_rds)), file = debug_file, append = TRUE)
+
+```
+
+
+```{r}
+#| label: loading-data-and-generating-Seurats
+#| output: false
+#| echo: false
+
+cat("Input file:", cfg$input_dir, "\n") # checking that correct parameters come from run-002 script
+#cat("Output RDS:", params$output_rds, "\n")
+
+## anything after a # is not part of the code, but just a note to the reader
+## we recommend including a lot of notes and explanations of what you are doing throughout your analysis, either in the code chunks or text chunks
+## future you will be thankful
+
+data_10x <- Read10X(data.dir=cfg$input_dir) ## input parameter defined in run-002 script
+
+obj <- CreateSeuratObject(counts=data_10x,
+                          project='pbmc10k', ## change project name if you wish
+                          min.cells=3) ## filtering only genes present in a minimum of 3 cells, this filter can be excluded if you are planning to merge multiple objects
+
+obj[['percent.mt']] <- PercentageFeatureSet(obj, pattern ='^MT-') ## adding in percent.mt as a QC metric: pattern is ^MT- for human, ^mt- for mouse
+
+## you may wish to include other details in the metadata of your Seurat object (experiment ID, timepoint, patient ID, etc.)
+## especially important if you are planning on merging multiple objects later (different captures, different sequencing runs, etc)
+## make your life easier by including this information at the earliest stages
+
+obj[['timepoint']] <- 0 ## dummy variable for illustration
+obj[['treatment']] <- 'control' ## dummy variable for illustration
+
+```
+
+
+```{r}
+#| label: prefilter-QC
+#| output: false
+#| echo: false
+
+## generating violin plots of our three standard QC metrics
+## using colorblind-friendly palette for ease of visibility and because Seurat default is ugly
+
+QC_prefilter <- VlnPlot(obj,
+                        features=c('nFeature_RNA', 'nCount_RNA', 'percent.mt'),
+                        ncol=3,
+                        group.by='orig.ident',
+                        cols=cbf_3) 
+```
+
+## Initial QC and filtering
+
+@fig-QC-prefilter
+
+```{r}
+#| label: fig-QC-prefilter
+#| fig-cap: 'QC metrics pre-filtration'
+
+QC_prefilter
+```
+
+
+```{r}
+#| label: threshold-calculations
+#| output: false
+#| echo: false
+
+## calculating thresholds as median + 3 MAD
+
+median_nCount_RNA <- median(obj$nCount_RNA)
+mad_nCount_RNA <- mad(obj$nCount_RNA)
+
+median_percent.mt <- median(obj$percent.mt)
+mad_percent.mt <- mad(obj$percent.mt)
+
+median_nFeature_RNA <- median(obj$nFeature_RNA)
+mad_nFeature_RNA <- mad(obj$nFeature_RNA)
+
+threshold_nCount_RNA <- c(median_nCount_RNA + 3*mad_nCount_RNA)
+threshold_percent.mt <- c(median_percent.mt + 3*mad_percent.mt)
+threshold_nFeature_RNA <- c(median_nFeature_RNA + 3*mad_nFeature_RNA)
+
+
+```
+
+## Doublet identification
+
+```{r}
+#| label: scDblFinder
+#| output: false
+#| echo: false
+obj <- JoinLayers(obj)
+obj.sce <- as.SingleCellExperiment(obj) ## scDblFinder requires a single cell experiment object instead of a Seurat object
+obj.sce <- scDblFinder(obj.sce) ## run scDblFinder
+obj$scDblFinder.score <- obj.sce$scDblFinder.score ## transfer scores to Seurat object
+obj$scDblFinder.class <- obj.sce$scDblFinder.class ## transfer classes to Seurat object
+rm(obj.sce) ## remove sce object
+
+violin_doublet <- VlnPlot(obj,
+                          features='nCount_RNA',
+                          group.by='scDblFinder.class',
+                          cols=cbf_3)
+```
+@fig-violin-doublet
+
+```{r}
+#| label: fig-violin-doublet
+#| fig-cap: 'Violin plots of nCount_RNA, grouped by doublet class'
+
+violin_doublet + NoLegend()
+```
+
+```{r}
+#| label: QC-filtering
+#| output: false
+#| echo: false
+
+## you can change filtration metrics here, if you wish (ex. set a mitochondrial cutoff of 5%)
+
+obj <- subset(obj, subset = nFeature_RNA > 200 & ## additional filter: minimum of 200 genes per cell
+                nFeature_RNA < threshold_nFeature_RNA &
+                nCount_RNA < threshold_nCount_RNA &
+                percent.mt < threshold_percent.mt &
+                scDblFinder.class %in% 'singlet')
+
+QC_postfilter <- VlnPlot(obj,
+                         features=c('nFeature_RNA', 'nCount_RNA', 'percent.mt'),
+                         ncol=3,
+                         group.by='orig.ident',
+                         cols=cbf_3)
+```
+@fig-violin-postfilter
+
+```{r}
+#| label: fig-violin-postfilter
+#| fig-cap: 'Violin plots of QC metrics post-filtration'
+
+QC_postfilter + NoLegend()
+```
+## SCTransform
+
+```{r}
+#| label: sctransform
+#| output: false
+#| echo: false
+
+options(future.globals.maxSize = 2 * 1e9) ## set globals.maxSize to 2GB
+
+obj %>%
+  SCTransform() %>%
+  RunPCA(dims=1:30) %>%
+  FindNeighbors(dims=1:30, reduction='pca') %>%
+  FindClusters(resolution=seq(0.1, 1, 0.1), cluster.name=c('sc.0.1',
+                                                           'sc.0.2',
+                                                           'sc.0.3',
+                                                           'sc.0.4',
+                                                           'sc.0.5',
+                                                           'sc.0.6',
+                                                           'sc.0.7',
+                                                           'sc.0.8',
+                                                           'sc.0.9',
+                                                           'sc.1.0')) %>% ## testing 10 resolutions between 0.1-1.0
+  RunUMAP(dims=1:30) -> obj
+```
+
+@fig-umap-res-01
+
+```{r}
+#| label: fig-umap-res-01
+#| fig-cap: 'UMAP at resolution 0.1'
+
+DimPlot(obj,
+        group.by='sc.0.1',
+        reduction='umap',
+        cols=cbf_3,
+        label=FALSE)
+```
+
+@fig-clustree
+
+```{r}
+#| label: fig-clustree
+#| fig-cap: 'Clustree from resolutions 0.1-1.0'
+
+clustree(obj,
+         prefix='sc.')
+```
+## Marker gene identification
+
+```{r}
+#| label: markers-res-01
+#| output: false
+#| echo: false
+
+markers.01 <- FindAllMarkers(obj,
+                             group.by='sc.0.1',
+                             only.pos=TRUE)
+
+markers.01 %>%
+  group_by(cluster) %>%
+  dplyr::filter(avg_log2FC > 1) %>% ## filtering only genes with avg_log2FC > 1
+  slice_head(n=5) %>% ## retaining only top 5 genes
+  ungroup() -> top5.markers.01
+```
+
+## Heatmap
+
+@fig-heatmap-res-01
+
+```{r}
+#| label: fig-heatmap-res-01
+#| fig-cap: 'Heatmap of top 5 marker genes for clusters at resolution 0.1'
+
+DoHeatmap(obj,
+          features=top5.markers.01$gene, ## could replace this with a list of genes of interest
+          group.by='sc.0.1',
+          group.colors=cbf_3) + NoLegend() + scale_fill_viridis() ## replacing default Seurat colors, which are ugly
+```
+## Plotting of selected marker genes
+
+@fig-feature-plots-known-marker-genes
+
+```{r}
+#| label: fig-feature-plots-known-marker-genes
+#| fig-cap: 'UMAPs of expression levels of four selected marker genes'
+
+FeaturePlot(obj,
+            features=c('CD3D', 'CD79A', 'NKG7', 'FCN1'), ## choose your favorite genes here
+            reduction='umap')
+```
+@fig-violin-plots-known-marker-genes
+
+```{r}
+#| label: fig-violin-plots-known-marker-genes
+#| fig-cap: 'Violin plots for four selected marker genes'
+
+VlnPlot(obj,
+        features=c('CD3D', 'CD79A', 'NKG7', 'FCN1'),
+        group.by='sc.0.1',
+        cols=cbf_3,
+        stack=TRUE,
+        flip=TRUE)
+```
+
+## Unsupervised cell type identification
+
+```{r}
+#| label: singler
+#| output: false
+#| echo: false
+
+singler_ref <- celldex::BlueprintEncodeData() ## get reference dataset
+
+singler_results <- SingleR::SingleR(
+  test=GetAssayData(obj, assay='SCT', layer='data'),
+  ref=singler_ref,
+  labels=singler_ref@colData@listData$label.main)
+
+obj$singler.cell.type <- singler_results$labels ## add SingleR results as a metadata column in Seurat object
+```
+
+@fig-umap-singler
+
+```{r}
+#| label: fig-umap-singler
+#| fig-cap: 'UMAP colored by SingleR cell type'
+
+DimPlot(obj,
+        group.by='singler.cell.type',
+        cols=cbf_3,
+        reduction='umap')
+```
+
+```{r}
+#| label: Azimuth
+#| output: false
+#| echo: false
+
+## alternative package for automated labeling of cell types: look at https://azimuth.hubmapconsortium.org/ for available references
+## Azimuth defines cells at different levels of granularity
+
+obj <- RunAzimuth(obj,
+                  reference="/data/NCI-CIO/lynchmt/RNAseq-test/pbmcref.SeuratData/azimuth") 
+```
+
+@fig-umap-azimuth-l1
+
+```{r}
+#| label: fig-umap-azimuth-l1
+#| fig-cap: 'UMAP colored by Azimuth level 1 cell type'
+
+DimPlot(obj,
+        group.by='predicted.celltype.l1',
+        cols=cbf_3,
+        reduction='umap')
+```
+
+@fig-umap-azimuth-l2
+
+```{r}
+#| label: fig-umap-azimuth-l2
+#| fig-cap: 'UMAP colored by azimuth level 2 cell type'
+
+DimPlot(obj,
+        group.by='predicted.celltype.l2',
+        reduction='umap',
+        cols=cbf_3)
+```
+## Barcharts using dittoSeq
+
+@fig-barchart-azimuth-l2
+
+```{r}
+#| label: fig-barchart-azimuth-l2
+#| fig-cap: 'Quantification of Azimuth level 2 cell types'
+
+dittoBarPlot(obj,
+             var='predicted.celltype.l2',
+             group.by='predicted.celltype.l2',
+             retain.factor.levels=TRUE,
+             scale='count') + NoLegend()
+```
+
+
+
+
+
+
+```{r}
+#| label: saving
+#| output: false
+#| echo: false
+
+saveRDS(obj, cfg$output_rds)
+```
+
+
+
+
+
+
+
