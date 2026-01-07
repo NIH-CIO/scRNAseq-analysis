@@ -13,19 +13,6 @@ cfg <- params
 ```
 
 
-```{r debug, eval=TRUE, echo=TRUE}
-
-debug_file <- "qmd_automate_debug.txt"
-write("DEBUG: starting document", file = debug_file)
-write(paste("params object:", capture.output(str(params))), file = debug_file, append = TRUE)
-write(paste("params object:", capture.output(str(params))), file = debug_file, append = TRUE)
-
-write(paste("input directory from cfg:", capture.output(cfg$input_dir)), file = debug_file, append = TRUE)
-write(paste("output file from cgf:", capture.output(cfg$output_rds)), file = debug_file, append = TRUE)
-
-```
-
-
 ```{r}
 #| echo: false
 #| output: false
@@ -71,18 +58,6 @@ cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of col
 ## Quarto
 
 This pipeline was prepared using Quarto, which allows you to generate a single file alternating text chunks and code chunks. The file can then be rendered as an html document, which can include both text and figures generated in R. 
-
-
-```{r debug-test2, eval=TRUE, echo=TRUE}
-debug_file <- "qmd_automate_debug_test2.txt"
-write("DEBUG: starting document", file = debug_file)
-write(paste("cfg object:", capture.output(str(cfg))), file = debug_file, append = TRUE)
-write(paste("cfg object:", capture.output(str(cfg))), file = debug_file, append = TRUE)
-
-write(paste("input directory:", capture.output(cfg$input_dir)), file = debug_file, append = TRUE)
-write(paste("output file:", capture.output(cfg$output_rds)), file = debug_file, append = TRUE)
-
-```
 
 
 ```{r}
