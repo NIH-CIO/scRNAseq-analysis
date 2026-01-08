@@ -1,9 +1,14 @@
 # CIO scRNAseq pipeline
 
 ## Accessing the pipeline on Biowulf:
-<ol>
-  <li> Copy .. with the following command: \ 
-  cp /data/NCI-CIO/1.0/project/* ./dir/</li>
+**1.** Copy.. with the following command:
+*cp /data/NCI-CIO/1.0/project/* ./dir/*
+**2.** Open a terminal.. 
+
+<ol></ol>
+  <li> Copy .. with the following command:
+    
+  </li>
   <li> < /li>
   <li> </li>
   <li> </li>
