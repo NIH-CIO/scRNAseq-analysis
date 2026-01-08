@@ -2,9 +2,8 @@
 
 ## Accessing the pipeline on Biowulf:
 <ol>
-  <li> Copy .. with the following command:  
-  cp /data/NCI-CIO/1.0/project/* ./dir/
-  </li>
+  <li> Copy .. with the following command: \ 
+  cp /data/NCI-CIO/1.0/project/* ./dir/</li>
   <li> < /li>
   <li> </li>
   <li> </li>
