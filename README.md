@@ -1,8 +1,16 @@
-# scRNAseq-analysis
+# CIO scRNAseq pipeline
 
-## Using the pipeline on Biowulf:
+## Accessing the pipeline on Biowulf:
 <ol>
-  <li>1. Copy </li>
-  <li>2. </li>
-  <li>3. </li>
+  <li>Copy .. with the following command:\n
+  cp /data/NCI-CIO/1.0/project/* ./dir/</li>
+  <li> < /li>
+  <li> </li>
+  <li> </li>
 </ol>
+
+
+## Process to run scripts
+<img src="./images/pipeline-screenshot.png" alt="" width="300">
+
+
