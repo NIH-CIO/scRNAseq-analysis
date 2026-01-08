@@ -62,16 +62,16 @@ We will often need to combine multiple datasets together, which can lead to the 
 
 ## Raw data vs Seurat objects
 
-QC and doublet detection should be done on a per sample basis because QC metrics and doublet frequency may differ from sample to sample. We recommend performing the initial stages (creating a Seurat object, QC, doublet detection) on each sample separately, then merging. We have prepared Seurat objects and filtered out low quality cells and doublets already and will now load those objects.
+QC and doublet detection should be done on a per sample basis because QC metrics and doublet frequency may differ from sample to sample. We recommend performing the initial stages (creating a Seurat object, QC, doublet detection) on each sample separately, then merging. We have prepared Seurat objects and filtered out low quality cells and doublets already and will now load those objects. For this template, we will consider 3 samples from 3 patients (P5, P6, and P7).
 
 ```{r}
 #| label: loading
 #| output: false
 #| echo: false
 
-P5 <- LoadSeuratRds('/data/NCI-CIO/prinsds/CIO_pipeline_files/VB_003_files/VB_003_P5_tomerge_v2.rds')
-P6 <- LoadSeuratRds('/data/NCI-CIO/prinsds/CIO_pipeline_files/VB_003_files/VB_003_P6_tomerge_v2.rds')
-P7 <- LoadSeuratRds('/data/NCI-CIO/prinsds/CIO_pipeline_files/VB_003_files/VB_003_P7_tomerge_v2.rds')
+P5 <- LoadSeuratRds('/path/to/P5.rds')
+P6 <- LoadSeuratRds('/path/to/P6.rds')
+P7 <- LoadSeuratRds('/path/to/P7.rds')
 
 ## confirm that you have added metadata columns so you can easily separate different patients
 ## ex. P5$patient <- 'P5'
@@ -87,7 +87,7 @@ P7 <- LoadSeuratRds('/data/NCI-CIO/prinsds/CIO_pipeline_files/VB_003_files/VB_00
 
 obj <- merge(x=P5,
              y=c(P6, P7), ## if you need to merge more than two objects, put one object in x and a list of the remaining objects in y
-             add.cell.ids=c('P5', 'P6', 'P7')) ## adding 'd' or 'h' to cell names as another way to distinguish cells
+             add.cell.ids=c('P5', 'P6', 'P7')) ## adding prefixes to help distinguish which cell came from which patient
 ```
 
 ```{r}
@@ -105,7 +105,7 @@ obj %>% ## this analysis is without integration
 
 ## Unintegrated analysis
 
-First, we will perform a standard SCTransform analysis on the merged object but without integration. @fig-unintegrated-umap shows a UMAP without integration, colored by cluster at resolution 0.3, showing 17 different clusters.
+First, we will perform a standard SCTransform analysis on the merged object but without integration. @fig-unintegrated-umap shows a UMAP without integration, colored by cluster at resolution 0.3.
 
 ```{r}
 #| label: fig-unintegrated-umap
@@ -117,7 +117,7 @@ DimPlot(obj,
         cols=cbf_3,
         label=TRUE)
 ```
-Are cells from the three patients well-mixed? @fig-umap-unintegrated-by-patient shows the same UMAP, now colored by patient. We see good mixing in some areas, but some areas seem to mostly contain cells from a single patient.
+Are cells from the three patients well-mixed? @fig-umap-unintegrated-by-patient shows the same UMAP, now colored by patient. 
 
 ```{r}
 #| label: fig-umap-unintegrated-by-patient
@@ -128,7 +128,7 @@ DimPlot(obj,
         group.by='patient',
         cols=cbf_3)
 ```
-@fig-barplot-unintegrated-by-cluster quantifies the cells per patient in each cluster. While each cluster contains some cells from each patient, there are some clusters that are disproportionately represented by a single patient: see cluster 3 in particular. This indicates that integration is likely necessary for this dataset.
+@fig-barplot-unintegrated-by-cluster quantifies the cells per patient in each cluster to help visualize mixing between patients.
 
 ```{r}
 #| label: fig-barplot-unintegrated-by-cluster
@@ -141,7 +141,7 @@ dittoBarPlot(obj,
 ```
 ## Integration
 
-For integration, we will follow the Seurat integration vignettes available at https://satijalab.org/seurat/articles/seurat5_integration. Seurat offers five different methods of integration: we will try two different methods- anchor-based RPCA integration and Harmony.
+For integration, we will follow the Seurat integration vignettes available [here](https://satijalab.org/seurat/articles/seurat5_integration). Seurat offers five different methods of integration: we will try two different methods- anchor-based RPCA integration and Harmony.
 
 ```{r}
 #| label: RPCA-integration
@@ -177,7 +177,7 @@ obj %>%
           reduction.name='harmony.umap') -> obj
 ```
 
-We will first look at RPCA integration. @fig-rpca-umap shows two UMAPs: on the left, colored by cluster and on the right, colored by condition.
+We will first look at RPCA integration. @fig-rpca-umap shows two UMAPs: on the left, colored by cluster and on the right, colored by patient.
 
 ```{r}
 #| label: fig-rpca-umap
@@ -192,7 +192,7 @@ DimPlot(obj,
                               cols=cbf_3)
 ```
 
-Next, @fig-harmony-umap shows a similar figure for Harmony integration: on the left, colored by cluster and on the right, colored by condition.
+Next, @fig-harmony-umap shows a similar figure for Harmony integration: on the left, colored by cluster and on the right, colored by patient.
 
 ```{r}
 #| label: fig-harmony-umap
@@ -206,7 +206,7 @@ DimPlot(obj,
                               reduction='harmony.umap',
                               cols=cbf_3)
 ```
-Visually, it appears that mixing is improved for both RPCA and Harmony integration. To quantify this, @fig-barchart-rpca-patient-by-cluster quantifies cells per patient by RPCA cluster. Mixing appears to be better than without integration, but there are certainly still some clusters that are disproportionately from a single patient (ex cluster 17).
+@fig-barchart-rpca-patient-by-cluster quantifies cells per patient by RPCA cluster.
 
 ```{r}
 #| label: fig-barchart-rpca-patient-by-cluster
@@ -217,7 +217,7 @@ dittoBarPlot(obj,
              group.by='rpca.0.3',
              retain.factor.levels=TRUE) + ylab('Proportion of cells')
 ```
-@fig-barchart-harmony-patient-by-cluster shows a similar analysis for Harmony integration, again showing improved mixing between patients as compared to unintegrated data.
+@fig-barchart-harmony-patient-by-cluster shows a similar analysis for Harmony integration.
 
 ```{r}
 #| label: fig-barchart-harmony-patient-by-cluster
@@ -232,7 +232,7 @@ dittoBarPlot(obj,
 
 ## Conclusions
 
-If you are working with multiple samples, it is essential to compare unintegrated to integrated data. From examining unintegrated data (@fig-umap-unintegrated-by-patient), we can clearly see some separation between patients, motivating us to try integration. Both RPCA and Harmony integration improved mixing between the three patients and significantly reduced the presence of patient-specific clusters. We do not see huge differences between RPCA and Harmony integration from this basic view of the data: you can test using either or both of these integration methods. The Seurat vignette considers RPCA to be more conservative (less correction) than is Harmony. Note that this dataset has minimal batch effects, as these three samples were processed and captured in parallel: you would expect to see stronger differences from sample-to-sample if you are combining samples from captures that were done on different days/by different people/with different technologies/etc.
+If you are working with multiple samples, it is essential to compare unintegrated to integrated data. From examining unintegrated data (@fig-umap-unintegrated-by-patient), we can usually see some separation between different samples, particularly when working with different patients, motivating us to try integration. Here, we show both RPCA and Harmony integration: the Seurat vignette considers RPCA to be more conservative (less correction) than is Harmony.
 
 ```{r}
 #| label: saving
