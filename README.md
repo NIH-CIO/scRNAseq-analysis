@@ -14,7 +14,7 @@
 *app-rstudio* 
 
 
-## Process to run scripts
+## Pipeline Workflow
 <img src="./images/pipeline-screenshot.png" alt="" width="300">
 
 
