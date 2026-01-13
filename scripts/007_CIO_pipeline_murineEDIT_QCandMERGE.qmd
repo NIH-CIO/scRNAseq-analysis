@@ -93,7 +93,7 @@ setwd("/gpfs/gsfs12/users/minnarcm/R/Project_Template1") ## set this to your dat
 ## Sample 1
 T1 <- Read10X_h5("Trial_dataset/T1_filtered_feature_bc_matrix.h5") 
 obj1 <- CreateSeuratObject(counts = T1, 
-                          project = 'SCAF4396_T1',
+                          project = 'T1',
                           min.cells = 5) 
 obj1[['percent.mt']] <- PercentageFeatureSet(obj1, pattern ='^mt-') 
 obj1[['log10GenesPerUMI']] <- log10(obj1$nFeature_RNA) / log10(obj1$nCount_RNA)
@@ -109,7 +109,7 @@ obj1[['treatment']] <- 'G1'
 ## Sample 2
 T2 <- Read10X_h5("Trial_dataset/T2_filtered_feature_bc_matrix.h5") 
 obj2 <- CreateSeuratObject(counts = T2, 
-                          project = 'SCAF4397_T2', 
+                          project = 'T2', 
                           min.cells = 5) 
 obj2[['percent.mt']] <- PercentageFeatureSet(obj2, pattern ='^mt-') 
 obj2[['log10GenesPerUMI']] <- log10(obj2$nFeature_RNA) / log10(obj2$nCount_RNA)
@@ -118,7 +118,7 @@ obj2[['treatment']] <- 'G2'
 ##Sample 3
 T3 <- Read10X_h5("Trial_dataset/T3_filtered_feature_bc_matrix.h5") 
 obj3 <- CreateSeuratObject(counts = T3, 
-                          project = 'SCAF4398_T3', 
+                          project = 'T3', 
                           min.cells = 5) 
 obj3[['percent.mt']] <- PercentageFeatureSet(obj3, pattern ='^mt-') 
 obj3[['log10GenesPerUMI']] <- log10(obj3$nFeature_RNA) / log10(obj3$nCount_RNA)
@@ -127,7 +127,7 @@ obj3[['treatment']] <- 'G3'
 ##Sample 4
 T4 <- Read10X_h5("Trial_dataset/T4_filtered_feature_bc_matrix.h5") 
 obj4 <- CreateSeuratObject(counts = T4, 
-                          project = 'SCAF4399_T4', 
+                          project = 'T4', 
                           min.cells = 5) 
 obj4[['percent.mt']] <- PercentageFeatureSet(obj4, pattern ='^mt-') 
 obj4[['log10GenesPerUMI']] <- log10(obj4$nFeature_RNA) / log10(obj4$nCount_RNA)
