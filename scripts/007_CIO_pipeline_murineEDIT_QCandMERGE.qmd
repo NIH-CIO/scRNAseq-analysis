@@ -91,7 +91,7 @@ setwd("/gpfs/gsfs12/users/minnarcm/R/Project_Template1") ## set this to your dat
 ## This chunk is dedicated to loading your .h5 files and adding any additional metadata for analysis. The first sample has notes describing parts, remaining 3 samples can be edited as needed. 
 
 ## Sample 1
-T1 <- Read10X_h5("Trial_dataset/SCAF4396_T1_GEX_filtered_feature_bc_matrix.h5") 
+T1 <- Read10X_h5("Trial_dataset/T1_filtered_feature_bc_matrix.h5") 
 obj1 <- CreateSeuratObject(counts = T1, 
                           project = 'SCAF4396_T1',
                           min.cells = 5) 
@@ -107,7 +107,7 @@ obj1[['treatment']] <- 'G1'
 # Finally 'treatment' is added both as a dummy variable for illustration (you can add more variables/metadata like this) and because treatment is useful for this dataset). You may wish to include other details in the metadata of your Seurat object (experiment ID, timepoint, patient ID, etc.). Make changes consistent for all samples below and copy/paste to add more or delete if needed. Finally, if you want to use more accurate labels like 'Control' instead of 'G1', find and replace all.
 
 ## Sample 2
-T2 <- Read10X_h5("Trial_dataset/SCAF4397_T2_GEX_filtered_feature_bc_matrix.h5") 
+T2 <- Read10X_h5("Trial_dataset/T2_filtered_feature_bc_matrix.h5") 
 obj2 <- CreateSeuratObject(counts = T2, 
                           project = 'SCAF4397_T2', 
                           min.cells = 5) 
@@ -116,7 +116,7 @@ obj2[['log10GenesPerUMI']] <- log10(obj2$nFeature_RNA) / log10(obj2$nCount_RNA)
 obj2[['treatment']] <- 'G2' 
 
 ##Sample 3
-T3 <- Read10X_h5("Trial_dataset/SCAF4398_T3_GEX_filtered_feature_bc_matrix.h5") 
+T3 <- Read10X_h5("Trial_dataset/T3_filtered_feature_bc_matrix.h5") 
 obj3 <- CreateSeuratObject(counts = T3, 
                           project = 'SCAF4398_T3', 
                           min.cells = 5) 
@@ -125,7 +125,7 @@ obj3[['log10GenesPerUMI']] <- log10(obj3$nFeature_RNA) / log10(obj3$nCount_RNA)
 obj3[['treatment']] <- 'G3'
 
 ##Sample 4
-T4 <- Read10X_h5("Trial_dataset/SCAF4399_T4_GEX_filtered_feature_bc_matrix.h5") 
+T4 <- Read10X_h5("Trial_dataset/T4_filtered_feature_bc_matrix.h5") 
 obj4 <- CreateSeuratObject(counts = T4, 
                           project = 'SCAF4399_T4', 
                           min.cells = 5) 
