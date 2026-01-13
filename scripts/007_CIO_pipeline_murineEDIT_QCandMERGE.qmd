@@ -1,0 +1,748 @@
+---
+title: "TRIAL_scRNAseq_PIPELINE"
+subtitle: "Murine edit"
+
+anotations:
+  author:
+  - name: "Christine Minnar"
+  - name: "Daniel Prins"
+  editor: "Christine Minnar"
+    
+date: today
+date-format: "MM/DD/YYYY"
+
+toc: true
+
+format: 
+  html:
+    theme: cosmo
+    fontawesome: true
+    code-fold: true
+    code-summary: "Show code"
+    css: styles.css
+    embed-resources: true
+
+editor: source
+
+execute: 
+  warning: false
+  echo: true
+  eval: true
+  
+freeze: auto
+---
+
+## Basic scRNAseq analysis in R for multiple samples
+
+### Purpose
+
+002_CIO_pipeline_SCTransform was adapted to create this basic **murine** data pipeline for multiple samples allowing a user with basic R skills to analyze 10X scRNAseq using Seurat. Required input files are cellranger output files (filtered_counts.h5), as will typically be received from a sequencing facility (SCAF). **THIS IS A TRIAL-RUN WITH IN-HOUSE MURINE TUMOR DATASET**. This setup is heavily based upon the Seurat tutorial, available at https://satijalab.org/seurat/articles/pbmc3k_tutorial and adapted with NIDAP-style QC and visuals.
+
+### STEP 1: Setup and load packages
+
+```{r}
+#| label: Setup
+
+#Load Packages
+library(Seurat)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+library(ggplot2)
+library(ggpubr)
+
+library(patchwork)
+library(SingleCellExperiment)
+library(BiocManager)
+library(sctransform)
+library(SeuratObject)
+library(scater)
+library(scran)
+library(Matrix)
+library(scDblFinder)
+library(rmarkdown)
+library(reshape2)
+library(ggforce)
+library(scRepertoire)
+library(SingleR)
+library(nichenetr)
+library(celldex)
+library(glmGamPoi)
+library(clustree)
+library(dittoSeq)
+library(Azimuth)
+library(future)
+library(BiocParallel)
+
+options(Seurat.object.assay.calcn = TRUE)
+
+cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors that we can use for visualizations
+
+setwd("/gpfs/gsfs12/users/minnarcm/R/Project_Template1") ## set this to your data dir; see container directions
+```
+
+### STEP 2: Load samples and create Seurat Objects (SO) and metadata
+
+```{r}
+#| label: loading-data-and-generating-Seurats
+#| output: false
+
+## This chunk is dedicated to loading your .h5 files and adding any additional metadata for analysis. The first sample has notes describing parts, remaining 3 samples can be edited as needed. 
+
+## Sample 1
+T1 <- Read10X_h5("Trial_dataset/SCAF4396_T1_GEX_filtered_feature_bc_matrix.h5") 
+obj1 <- CreateSeuratObject(counts = T1, 
+                          project = 'SCAF4396_T1',
+                          min.cells = 5) 
+obj1[['percent.mt']] <- PercentageFeatureSet(obj1, pattern ='^mt-') 
+obj1[['log10GenesPerUMI']] <- log10(obj1$nFeature_RNA) / log10(obj1$nCount_RNA)
+obj1[['treatment']] <- 'G1'
+
+# for Read10X_h5 -> change this to your data directory path
+# for counts enter name of your .h5 file as assigned on the prior line (like in example; here 'T1' means 'tumor sample 1')
+# you can change the project name to your actual sample name
+# Add in percent.mt as a QC metric: pattern = '^MT-' for human and '^mt-' for mouse
+# Log10GenesPerUMI is added here
+# Finally 'treatment' is added both as a dummy variable for illustration (you can add more variables/metadata like this) and because treatment is useful for this dataset). You may wish to include other details in the metadata of your Seurat object (experiment ID, timepoint, patient ID, etc.). Make changes consistent for all samples below and copy/paste to add more or delete if needed. Finally, if you want to use more accurate labels like 'Control' instead of 'G1', find and replace all.
+
+## Sample 2
+T2 <- Read10X_h5("Trial_dataset/SCAF4397_T2_GEX_filtered_feature_bc_matrix.h5") 
+obj2 <- CreateSeuratObject(counts = T2, 
+                          project = 'SCAF4397_T2', 
+                          min.cells = 5) 
+obj2[['percent.mt']] <- PercentageFeatureSet(obj2, pattern ='^mt-') 
+obj2[['log10GenesPerUMI']] <- log10(obj2$nFeature_RNA) / log10(obj2$nCount_RNA)
+obj2[['treatment']] <- 'G2' 
+
+##Sample 3
+T3 <- Read10X_h5("Trial_dataset/SCAF4398_T3_GEX_filtered_feature_bc_matrix.h5") 
+obj3 <- CreateSeuratObject(counts = T3, 
+                          project = 'SCAF4398_T3', 
+                          min.cells = 5) 
+obj3[['percent.mt']] <- PercentageFeatureSet(obj3, pattern ='^mt-') 
+obj3[['log10GenesPerUMI']] <- log10(obj3$nFeature_RNA) / log10(obj3$nCount_RNA)
+obj3[['treatment']] <- 'G3'
+
+##Sample 4
+T4 <- Read10X_h5("Trial_dataset/SCAF4399_T4_GEX_filtered_feature_bc_matrix.h5") 
+obj4 <- CreateSeuratObject(counts = T4, 
+                          project = 'SCAF4399_T4', 
+                          min.cells = 5) 
+obj4[['percent.mt']] <- PercentageFeatureSet(obj4, pattern ='^mt-') 
+obj4[['log10GenesPerUMI']] <- log10(obj4$nFeature_RNA) / log10(obj4$nCount_RNA)
+obj4[['treatment']] <- 'G4'
+
+```
+
+#### View column labels
+```{r}
+# Show QC metrics for the first 5 cells: allows you to see the metadata you've added per sample
+head(obj1@meta.data, 5)
+head(obj2@meta.data, 5)
+head(obj3@meta.data, 5)
+head(obj4@meta.data, 5)
+
+rm(T1)
+rm(T2)
+rm(T3)
+rm(T4)
+```
+
+### STEP 3: Prefilter QC
+
+#### A: violin plots
+```{r}
+#| label: QC-prefilter1
+#| fig-cap: "Violin plots"
+
+## generating violin plots of four standard QC metrics
+
+objs <- list(
+  obj1 = obj1,
+  obj2 = obj2,
+  obj3 = obj3,
+  obj4 = obj4
+)
+
+features_to_plot <- c("nFeature_RNA","nCount_RNA","percent.mt","log10GenesPerUMI")
+
+# 1) Extract per-cell values + treatment from each object
+df_list <- lapply(objs, function(o) {FetchData(o, vars = c(features_to_plot, "treatment", "orig.ident"))
+})
+
+# 2) Reorganize table for combined graph with all samples (df_long will be used for ggplot)
+df   <- bind_rows(df_list)
+df_long <- pivot_longer(df, cols = all_of(features_to_plot),
+                     names_to = "feature", values_to = "value")
+
+# 3) Assign colors to your groups (color ref here:https://derekogle.com/NCGraphing/resources/colors)
+treatment_colors <- c("G1"="azure4","G2"="darkseagreen4","G3"="steelblue3","G4"="tomato3")
+
+# 4) Make one violin figure: 4 facets (features), violins grouped by treatment
+QC_prefilter <- ggplot(df_long, aes(x = treatment, y = value, fill = treatment)) +
+  geom_violin(scale = "width", trim = TRUE) +
+  geom_boxplot(width = 0.12, outlier.size = 0.2, color = "black") +
+  facet_wrap(~ feature, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = treatment_colors) +
+  labs(x = NULL, y = NULL) +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.background = element_rect(fill = "grey95", color = NA),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+QC_prefilter
+```
+
+#### B: Alt violin plots 
+
+```{r}
+#| label: QC-prefilter1b
+#| fig-cap: "Violin plots alt view"
+
+VlnPlot(obj1, features = features_to_plot, ncol = 4)
+#o & coord_cartesian(ylim = c(0, 75000)) #(if you want to view close up; add 0 <- )
+FeatureScatter(obj1, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = 'lm')
+
+VlnPlot(obj2, features = features_to_plot, ncol = 4)
+#p & coord_cartesian(ylim = c(0, 75000)) #(if you want to view close up)
+FeatureScatter(obj2, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = 'lm')
+
+VlnPlot(obj3, features = features_to_plot, ncol = 4)
+#q & coord_cartesian(ylim = c(0, 75000)) #(if you want to view close up)
+FeatureScatter(obj3, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = 'lm')
+
+VlnPlot(obj4, features = features_to_plot, ncol = 4)
+#r & coord_cartesian(ylim = c(0, 75000)) #(if you want to view close up)
+FeatureScatter(obj4, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = 'lm') 
+
+```
+
+
+#### C: Density plots
+
+```{r}
+#| label: QC-prefilter3
+#| fig-cap: "Density plots"
+
+
+## This will create density plots for all samples: 
+
+df_long2 <- df_long |>
+  dplyr::mutate(
+    # transform by-feature just for plotting
+    value_plot = dplyr::case_when(
+      feature %in% c("nCount_RNA", "nFeature_RNA", "percent.mt") ~ log10(value + 1e-8),
+      TRUE ~ value
+    ),
+    feature_label = dplyr::recode(
+      feature,
+      nCount_RNA        = "UMI Count (nCount_RNA)",
+      nFeature_RNA      = "Gene Count (nFeature_RNA)",
+      percent.mt        = "Percent Mitochondrial Genes (percent.mt)",
+      log10GenesPerUMI  = "Complexity (log10GenesPerUMI)"
+    )
+  )
+
+QC_density <- ggplot(df_long2, aes(x = value_plot, color = treatment)) +
+  geom_density(linewidth = 0.4, adjust = 1) +             # line-only, like your example
+  facet_wrap(~ feature_label, ncol = 1, scales = "free") +
+  scale_color_manual(values = treatment_colors) +
+  labs(x = NULL, y = "Density", color = "Treatment") +
+  theme_bw(base_size = 12) +
+  theme(strip.text = element_text(face = "bold"))
+
+QC_density
+```
+
+### STEP 4: Filter QC and drop doublets
+
+```{r}
+#| label: QC-filter-metrics
+#| results: 'hide'
+#| message: false
+#| warning: false
+
+## FILTER SAMPLES (EDIT AS NEEDED HERE AFTER VIEWING VIOLIN PLOTS)
+# nCount_RNA
+ncounts.low         = NA
+ncounts.high        = NA
+mad.ncounts.low     = 3
+mad.ncounts.high    = 5
+
+# nFeature_RNA
+nfeature.low        = 550 #selected for this dataset
+nfeature.high       = NA
+mad.nfeature.low    = NA
+mad.nfeature.high   = 3
+
+# percent.mt
+mitoch.low          = NA
+mitoch.high         = 15
+mad.mitoch.low      = 3
+mad.mitoch.high     = NA
+
+# log10GenesPerUMI
+complexity.low          = NA
+complexity.high         = NA
+mad.complexity.low      = 3
+mad.complexity.high     = NA
+
+# RUN THRESHOLDS FOR ALL OBJECTS (DO NOT EDIT)
+Thresholds <- function(metric, abs_low, abs_high, MAD_low, MAD_high) {
+  m <- median(metric, na.rm = TRUE)
+  d <- mad(metric, na.rm = TRUE)
+  c(
+    low  = if (!is.na(abs_low))  abs_low  else if (!is.na(MAD_low))  m - MAD_low  * d else -Inf,
+    high = if (!is.na(abs_high)) abs_high else if (!is.na(MAD_high)) m + MAD_high * d else  Inf
+)}
+
+filtered_objs <- lapply(objs, function(obj) {
+  # 1) This step applies your thresholds per SO as a list form
+  nC <- Thresholds(obj$nCount_RNA,       ncounts.low,    ncounts.high,    mad.ncounts.low,    mad.ncounts.high)
+  nF <- Thresholds(obj$nFeature_RNA,     nfeature.low,   nfeature.high,   mad.nfeature.low,   mad.nfeature.high)
+  mt <- Thresholds(obj$percent.mt,       mitoch.low,     mitoch.high,     mad.mitoch.low,     mad.mitoch.high)
+  lG <- Thresholds(obj$log10GenesPerUMI, complexity.low, complexity.high, mad.complexity.low, mad.complexity.high)
+
+ 
+ # 2) This steip keeps your cells that meet QC thresholds
+  keep <-  (obj$nCount_RNA       >= nC["low"] & obj$nCount_RNA       <= nC["high"]) &
+           (obj$nFeature_RNA     >= nF["low"] & obj$nFeature_RNA     <= nF["high"]) &
+           (obj$percent.mt       >= mt["low"] & obj$percent.mt       <= mt["high"]) &
+           (obj$log10GenesPerUMI >= lG["low"] & obj$log10GenesPerUMI <= lG["high"])
+  keep[is.na(keep)] <- FALSE
+  obj_qc <- obj[, keep, drop = FALSE]
+  
+ # 3) This step will drop genes not seen in at least 'min.cells' cells
+  keep_genes <- Matrix::rowSums(GetAssayData(obj_qc, layer = "counts") > 0) >= 20
+  obj_qc <- obj_qc[keep_genes, , drop = FALSE]
+  
+  obj_qc
+})
+
+# 4) You are creating a list of all of your filtered samples
+filtered_objs <- lapply(filtered_objs, function(obj_qc) {
+  obj.sce <- as.SingleCellExperiment(obj_qc)
+  bp <- MulticoreParam(3, RNGseed=1234)
+  obj.sce <- scDblFinder(obj.sce, BPPARAM=bp)
+
+  obj_qc$scDblFinder.score <- obj.sce$scDblFinder.score
+  obj_qc$scDblFinder.class <- obj.sce$scDblFinder.class
+ 
+  rm(obj.sce)
+  
+   # >>> view singlets vs doublets BEFORE removal <<<
+  print(table(factor(obj_qc$scDblFinder.class, levels = c("singlet","doublet")),
+              useNA = "ifany"))
+  
+# 5) Drop doublets and apply filtered list to SOs
+  obj_qc[, obj_qc$scDblFinder.class != "doublet", drop = FALSE]
+})
+
+sapply(filtered_objs, function(o)
++     table(FetchData(o, "scDblFinder.class")[,1], useNA = "ifany"))
+
+obj1 <- filtered_objs$obj1
+obj2 <- filtered_objs$obj2
+obj3 <- filtered_objs$obj3
+obj4 <- filtered_objs$obj4
+```
+
+#### A: Filtered violin plots
+
+```{r}
+#| label: Filtered_QC1
+#| fig-cap: "Filtered violin plots"
+
+## generating violin plots of three standard QC metrics
+## using colorblind-friendly palette for ease of visibility 
+# 1) Extract per-cell values + treatment from each object
+filtered_df_list <- lapply(filtered_objs, function(o) {FetchData(o, vars = c(features_to_plot, "treatment", "orig.ident"))
+})
+
+# 2) Reorganize table for combined graph with all samples
+filtered_df   <- bind_rows(filtered_df_list)
+filtered_long <- pivot_longer(filtered_df, cols = all_of(features_to_plot),
+                     names_to = "feature", values_to = "value") %>%
+mutate(treatment = factor(
+    treatment,
+    levels = c("G1", "G2", "G3", "G4") # this helps control the order your treatments show up.
+))
+
+filtered_QC_violin <- ggplot(filtered_long, aes(x = treatment, y = value, fill = treatment)) +
+  geom_violin(scale = "width", trim = TRUE) +
+  geom_boxplot(width = 0.12, outlier.size = 0.2, color = "black") +
+  facet_wrap(~ feature, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = treatment_colors) +
+  labs(x = NULL, y = NULL) +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.background = element_rect(fill = "grey95", color = NA),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+filtered_QC_violin
+```
+
+#### B) Alt filtered violin plots
+```{r}
+#| label: Filtered_QC1b
+#| fig-cap: "Filtered Violin plots alt view"
+
+VlnPlot(obj1, features = features_to_plot, ncol = 4, cols = "green")
+FeatureScatter(obj1, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = 'lm')
+
+VlnPlot(obj2, features = features_to_plot, ncol = 4, cols = "green")
+FeatureScatter(obj2, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = 'lm')
+
+VlnPlot(obj3, features = features_to_plot, ncol = 4, cols = "green")
+FeatureScatter(obj3, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = 'lm')
+
+VlnPlot(obj4, features = features_to_plot, ncol = 4, cols = "green")
+FeatureScatter(obj4, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = 'lm')
+```
+
+#### C: Filtered counts
+
+```{r}
+#| label: Filtered_QC3
+#| tbl-cap: 'Filtered counts per treatment'
+
+# pre-QC and post-QC (filtered) cell counts per treatment
+cells_pre  <- dplyr::count(df,          treatment, name = "cells_pre")
+cells_post <- dplyr::count(filtered_df, treatment, name = "cells_post")
+
+cell_counts <- dplyr::left_join(cells_pre, cells_post, by = "treatment") |>
+  dplyr::mutate(percent_remaining = round(100 * cells_post / cells_pre, 1))
+
+cell_counts
+
+```
+
+### STEP 5: Merge SO 
+```{r}
+#| label: Merge_seurat_objects
+#| warning: false
+#| results: 'hide'
+#| message: false
+
+# Merge (no batch correction)
+merged <- merge(
+  x = filtered_objs[[1]],
+  y = filtered_objs[-1],
+  add.cell.ids = c("T1", "T2", "T3", "T4"),
+  merge.data = TRUE,
+  project = "scRNAProject",
+)
+
+rm(obj1, obj2, obj3, obj4, objs, filtered_objs, df, df_list, df_long, df_long2, filtered_df, filtered_df_list, filtered_long, filtered_QC_violin)
+gc()
+```
+
+### STEP 6: SCTransform
+
+```{r}
+#| label: SCTransform
+#| warning: false
+#| results: 'hide'
+#| message: false
+
+options(future.globals.maxSize = 3 * 1024^3) ## set globals.maxSize to 2GB for merged objs
+
+DefaultAssay(merged) <- "RNA"
+merged <- SCTransform(merged, 
+                      #vars.to.regress = "percent.mt", # Add if needed; if mito or cell cycle is expected biologically (stress,                                                            activation, proliferation), don’t regress it.
+                      do.correct.umi = TRUE,
+                      conserve.memory = TRUE,
+                      return.only.var.genes = TRUE,
+                      verbose = FALSE)
+                      
+
+DefaultAssay(merged) <- "SCT"
+set.seed(42)
+merged <- RunPCA(merged, npcs = 30, seed.use = 42)                   
+merged <- FindNeighbors(merged, dims = 1:30)          
+merged <- FindClusters(merged, resolution = seq(0.2,1.2,0.2)) #Edit if you need to change resolution (min, max, split by)
+merged <- RunUMAP(merged, reduction = "pca", dims = 1:30, seed.use = 42)
+#merged <- RunTSNE(merged, reduction = "pca", dim.embed = 2, dims = 1:30, seed.use = 1) # optional if you want to see TSNE
+```
+
+#### A: Clustered UMAPS
+
+```{r}
+#| label: Clustered_UMAPS_1
+#| fig-cap: 'Clustered UMAPS'
+
+## Plot by resolution
+dimplot1 <- DimPlot(merged,
+        group.by='SCT_snn_res.0.4', # you can edit this resolution by 0.2 OR change parameters in previous chunk
+        reduction='umap',
+        cols=cbf_3,
+        label=FALSE) +
+ labs(title = "UMAP by res 0.4")
+
+dimplot1
+
+## Plot by resolution per treatment
+dimplot2 <- DimPlot(merged,
+        group.by='SCT_snn_res.0.4',
+        split.by = 'treatment',
+        ncol = 2,
+        reduction='umap',
+        cols=cbf_3,
+        label=FALSE) +
+ labs(title = "UMAP by res 0.4")
+
+dimplot2
+
+## Plot by treatment
+dimplot3 <- DimPlot(merged,
+        group.by='treatment',
+        reduction='umap',
+        cols=treatment_colors,
+        label=FALSE) +
+ labs(title = "UMAP by Treatment")
+
+dimplot3
+
+# These all provide clustering of cell types and density by treatment group.
+```
+
+#### B: Cluster genes by violin plot
+
+```{r}
+#| label: violin_plots_known_marker_genes
+#| fig-cap: 'Violin plots for select genes'
+
+# this will help you select cluster resolution a bit.  Cell types should be unique to each cluster as much as possible; add genes as you prefer.
+Cluster_genes <- VlnPlot(merged,
+        features=c('Cd3e', 'Cd8a', 'Cd8b1', 'Cd4', 'Foxp3', 'Cd19', 'Ncr1', 'Nos2', 'Adgre1', 'Mrc1', 'Clec9a'),
+        group.by='SCT_snn_res.0.4',
+        cols=cbf_3,
+        stack=TRUE,
+        flip=TRUE)
+
+Cluster_genes
+
+#Get quick counts for clusters; you can quantify cell count changes per cluster
+with(merged@meta.data, table(SCT_snn_res.0.4, treatment))
+```
+
+#### C: Clustertree
+
+```{r}
+#| label: clustree
+#| fig-cap: 'Clustree from resolutions 0.2-1.2'
+
+clustertree <- clustree(merged, prefix = "SCT_snn_res.") # another tool to assist in cluster resolution identification
+
+clustertree
+```
+
+### STEP 7: Single gene UMAPS
+
+```{r}
+#| label: feature-plots-known-marker-genes
+#| fig-cap: 'UMAPs of expression levels of selected marker genes'
+
+singleUMAP <- FeaturePlot(
+  merged,
+  features = c("Cd3d", "Cd8a", "Cd4"), # edit as needed; will help in identifying which cell types are expressing what gene
+  cols = c("grey90","navyblue"),
+  pt.size = 0.1,
+  split.by = "treatment",
+  keep.scale = "all",
+  by.col = FALSE,
+  ncol = 2
+)
+
+singleUMAP
+
+singleUMAPfigure <- wrap_plots(singleUMAP) +
+  plot_layout(guides = "collect") &   # <— collects into one legend
+  guides(color = guide_colorbar(
+    title = "Expression",
+    direction = "vertical",
+    title.position = "top",
+    barwidth = unit(0.35, "cm"),
+    barheight = unit(2, "cm")
+  ))&
+  theme(
+    legend.position = "right",
+    legend.box = "vertical",
+    legend.title = element_text(size = 11),
+    legend.text  = element_text(size = 10),
+    axis.title   = element_text(size = 10),
+    axis.text    = element_text(size = 10)
+  )
+
+singleUMAPfigure
+
+#Get quick counts by genes
+genes <- c("Cd3d","Cd8a","Cd4","Adgre1", "Cd19", "Ncr1", "Ly6g")
+counts <- t(rowsum(t((as.matrix(GetAssayData(merged, layer="data")[genes, ]) > 0) + 0),
+                   merged$treatment))
+counts
+
+```
+
+### STEP 8: SingleR Cell types
+
+```{r}
+#| label: singler
+#| output: false
+
+## select reference dataset from below
+  #HPCA            = loader = celldex::HumanPrimaryCellAtlasData(), species = "human"),
+  #BlueprintEncode = loader = celldex::BlueprintEncodeData(),     species = "human"),
+  #MouseRNAseq     = loader = celldex::MouseRNAseqData(),         species = "mouse"),
+  #ImmGen          = loader = celldex::ImmGenData(),              species = "mouse")
+
+
+## select reference dataset
+MouseRNAseq <- celldex::MouseRNAseqData() #insert your selected reference here
+Immgen <- celldex::ImmGenData()
+
+singler_results <- SingleR::SingleR(
+  test = GetAssayData(merged, assay='SCT', layer='data'),
+  ref = c(MouseRNAseq),
+  labels = MouseRNAseq@colData@listData$label.main)
+
+singler_results2 <- SingleR::SingleR(
+  test = GetAssayData(merged, assay='SCT', layer='data'),
+  ref = c(Immgen),
+  labels = Immgen@colData@listData$label.main)
+
+merged$MouseRNAseq.main <- singler_results$labels ## add SingleR results as a metadata column in Seurat object
+merged$Immgen.main <- singler_results2$labels
+
+```
+
+#### A: Immgen and MouseRNAseq annotations
+
+```{r}
+#| label: umap-singler1
+#| fig-cap: 'UMAP colored by SingleR cell type'
+
+MouseRNAseq <- DimPlot(merged,
+        group.by='MouseRNAseq.main',
+        split.by = 'treatment',
+        ncol = 2,
+        reduction='umap',
+        cols=cbf_3) +
+labs(title = "MouseRNAseq")
+
+MouseRNAseq
+
+Immgen <- DimPlot(merged,
+        group.by='Immgen.main',
+        split.by = 'treatment',
+        ncol = 2,
+        reduction='umap',
+        cols=cbf_3) +
+labs(title = "Immgen")
+
+Immgen
+
+#Get quick counts for annotated cells
+with(merged@meta.data, table(MouseRNAseq.main, treatment))
+with(merged@meta.data, table(Immgen.main, treatment))
+```
+
+#### B: Immgen and MouseRNAseq quantifications
+
+```{r}
+#| label: barchart-celldex1
+#| fig-cap: 'Quantification of cell types'
+
+Barplot1 <- dittoBarPlot(merged,
+             var='MouseRNAseq.main',
+             group.by='MouseRNAseq.main',
+             split.by = 'treatment',
+             retain.factor.levels=TRUE,
+             scale='count') + NoLegend()
+
+Barplot1
+
+Barplot2 <- dittoBarPlot(merged,
+             var='Immgen.main',
+             group.by='Immgen.main',
+             split.by = 'treatment',
+             retain.factor.levels=TRUE,
+             scale='count') + NoLegend()
+
+Barplot2
+
+Stacked <- dittoBarPlot(merged,
+  var      = "MouseRNAseq.main",   # what fills the stacks (cell types)
+  group.by = "treatment",          # one bar per treatment
+  scale    = "count",              # or "percent"
+  y.breaks = c(2500, 5000, 7500, 10000),
+  max = 10000,
+  retain.factor.levels = TRUE
+) +
+  labs(x = NULL, y = "Number of cells") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+Stacked
+```
+
+#### C: Top genes per cluster
+
+```{r}
+#| label: markers-res-01
+#| warning: false
+
+# pick the clustering you want
+Idents(merged) <- "SCT_snn_res.0.4"   # adjust to your column
+
+# prep SCT for DE 
+DefaultAssay(merged) <- "SCT"
+merged <- PrepSCTFindMarkers(merged)
+
+# run DE
+markers.01 <- FindAllMarkers(
+  merged,
+  assay = "SCT",
+  only.pos = TRUE,
+  logfc.threshold = 1.2,   
+  min.pct = 0.10
+)
+
+# get top 5 per cluster by the FC column, whatever it's called in your Seurat
+top5.markers.01 <- markers.01 %>%
+  dplyr::group_by(cluster) %>%
+  dplyr::slice_max(order_by = avg_log2FC, n = 5, with_ties = FALSE) %>%
+  dplyr::ungroup()
+
+Top5heatmap <- DoHeatmap(merged,
+          features=top5.markers.01$gene, ## could replace this with a list of genes of interest
+          group.by='SCT_snn_res.0.4',
+          group.colors=cbf_3) + NoLegend() + scale_fill_viridis() ## replacing default Seurat colors, which are ugly
+
+Top5heatmap
+
+```
+
+
+### STEP 9: Save file for downstream analysis
+```{r}
+#| label: Save SO
+#| output: false
+#| echo: false
+
+SaveSeuratRds(merged, file='Output/mergedSO010926.rds')
+```
