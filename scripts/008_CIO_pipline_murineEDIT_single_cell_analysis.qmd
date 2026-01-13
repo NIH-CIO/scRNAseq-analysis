@@ -1,0 +1,545 @@
+---
+title: "TRIAL_scRNAseq_PIPELINE PART II"
+subtitle: "Murine edit: Downstream analysis_Example for Macrophages"
+
+anotations:
+  author:
+  - name: "Christine Minnar"
+    
+date: today
+date-format: "MM/DD/YYYY"
+
+toc: true
+
+format: 
+  html:
+    theme: cosmo
+    fontawesome: true
+    code-fold: true
+    code-summary: "Show code"
+    css: styles.css
+    embed-resources: true
+
+editor: source
+freeze: auto
+---
+
+## Basic scRNAseq analysis in R for multiple samples
+
+### Purpose
+
+This is a basic **murine** data pipeline applicable to multiple samples allowing a user with basic R skills to analyze scRNAseq using the merged Seurat object from part I of the tutorial. **THIS IS A TRIAL-RUN WITH IN-HOUSE MURINE TUMOR DATASET**. This setup is based upon the Seurat tutorial, available at https://satijalab.org/seurat/articles/pbmc3k_tutorial and adapted with downstream cell-specific visualizations.
+
+### STEP 1: Setup and load packages
+
+```{r}
+#| label: Setup
+#| message: FALSE
+#| warning: FALSE
+
+#Load Packages
+library(Seurat)
+library(RColorBrewer)
+library(ggpubr)
+
+library(patchwork)
+library(SingleCellExperiment)
+library(sctransform)
+library(SeuratObject)
+library(scater)
+library(scran)
+library(Matrix)
+library(scDblFinder)
+library(reshape2)
+library(ggforce)
+library(scRepertoire)
+library(SingleR)
+library(nichenetr)
+library(celldex)
+library(glmGamPoi)
+library(clustree)
+library(dittoSeq)
+library(future)
+library(DESeq2)
+library(scales)
+library(grid)
+library(gridBase)
+library(tidyverse)
+library(MAST)
+library(EnhancedVolcano)
+library(ggridges)
+library(viridis)
+
+options(Seurat.object.assay.calcn = TRUE)
+
+cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors that we can use for visualizations
+```
+
+#### Load data files for analysis
+
+For this workflow, you will load the **.rds** file of your merged SO created in the prior workflow.  You will be isolating a cell type of interest either by annotaion (ex. MouseRNAseq.main) or by genes (similar to NIDAPs dual label).  You will perform reclustering, DEG and create visuals for genes and execute DEG analysis for volcano plots.
+
+```{r}
+#| label: loading data
+
+merged <- readRDS("Trial dataset/mergedSO010926.rds") #direct to your merged SO file
+
+#Select colors for your groups (Ref here:https://derekogle.com/NCGraphing/resources/colors):
+treatment_colors <- c(
+  "G4"     = "tomato3",
+  "G2"     = "darkseagreen4",  
+  "G3"     = "steelblue3", 
+  "G1"     = "azure4"  
+)
+```
+
+### STEP 2. View Annotations and Isolate celltype of interest
+
+```{r}
+#| label: umap-singler1
+#| fig-cap: 'UMAP colored by SingleR cell type'
+
+# View annotated cells by treatment group
+MouseRNAseq <- DimPlot(merged,
+        group.by='MouseRNAseq.main',
+        split.by = 'treatment',
+        ncol = 2,
+        reduction='umap',
+        cols=cbf_3) +
+labs(title = "MouseRNAseq")
+
+MouseRNAseq
+
+Immgen <- DimPlot(merged,
+        group.by='Immgen.main',
+        split.by = 'treatment',
+        ncol = 2,
+        reduction='umap',
+        cols=cbf_3) +
+labs(title = "Immgen")
+
+Immgen
+
+#Get quick counts for annotated cells
+with(merged@meta.data, table(MouseRNAseq.main, treatment))
+with(merged@meta.data, table(Immgen.main, treatment))
+```
+
+#### A. Isolate cells by annotaion (ex. MouseRNAseq.main: Macrophages)
+
+```{r}
+#| label: Isolate cells by annotaion 
+#| warning: FALSE
+
+# You can subset celltype by annotation from MouseRNAseq or ImmGen above
+# Use SCT as the working assay for this part
+DefaultAssay(merged) <- "SCT"
+
+#First lets view the cells you'd like to keep. Below are a few examples where we identify the cell type we are interested it based on database used (naming can be different so you have to look at the legend above and copy the cell type as written). To switch cell type of interest, place a hash in front of the line for the celltype you want to censor and remove it from the cell-type of interest. Below is an example of looking only at Macrophages.
+
+# Name the cells of interest here:
+Idents(merged) <- "MouseRNAseq.main"
+#T_Cells <- WhichCells(merged, idents = c("T cells"))  # <-- your label(s)
+Macrophages <- WhichCells(merged, idents = c("Macrophages"))
+#B_Cells <- WhichCells(merged, idents = c("B cells"))
+#NK_Cells <- WhichCells(merged, idents = c("NK cells"))
+#DCs <- WhichCells(merged, idents = c("Dendritic cells"))
+#Granulocytes <- WhichCells(merged, idents = c("Granulocytes"))
+
+# Create new SO for those cells only:
+#T_CellsSO <- subset(merged, cells = T_Cells) #creates a new SO of your cells 
+MacrophagesSO <- subset(merged, cells = Macrophages)
+#B_CellsSO <- subset(merged, cells = B_Cells)
+#NK_CellsSO <- subset(merged, cells = NK_Cells)
+#DCsSO <- subset(merged, cells = DCs)
+#NeutrophilsSO <- subset(merged, cells = Granulocytes)
+
+# View cells of interest against all cells
+selected_highlight <- UMAPPlot(
+  merged,
+  reduction = "umap",
+  cells.highlight = list("Macrophages" = Macrophages),  # legend name,
+  cols = c("grey85", "red"),
+  shuffle = TRUE,
+  split.by = 'treatment',
+  ncol = 2, 
+  pt.size = 0.001,
+  sizes.highlight = 0.001
+)
+
+table(merged$treatment[Macrophages])
+
+#UMAP (Pull out cell type of interest separately)
+selected_cluster <- UMAPPlot(MacrophagesSO, 
+               group.by = "MouseRNAseq.main", 
+               split.by = "treatment",
+               ncol = 2,
+               cols = "steelblue")
+
+selected_highlight
+selected_cluster
+
+```
+
+#### B. Isolate cells by annotaion (ex. ImmGen: Macrophages)
+
+```{r}
+##| label: Isolate cells by annotaion
+##| warning: FALSE
+
+# This is an alternate visualization for part A (ImmGen instead of MouseRNAseq)
+#Idents(merged) <- "Immgen.main"
+
+#MacrophagesImmgen <- WhichCells(merged, idents = c("Macrophages"))
+
+#MacrophagesSOImmgen <- subset(merged, cells = MacrophagesImmgen)
+
+#selected_highlightI <- UMAPPlot(
+#  merged,
+#  reduction = "umap",
+#  cells.highlight = list("Macrophages" = MacrophagesImmgen),  # legend name,
+#  cols = c("grey85", "red"),
+#  shuffle = TRUE,
+#  split.by = 'treatment',
+#  ncol = 2, 
+#  pt.size = 0.001,
+#  sizes.highlight = 0.001
+#)
+
+#table(merged$treatment[MacrophagesImmgen])
+
+# UMAP (Pull out cell type of interest separately; skipped here)
+#selected_clusterI <- UMAPPlot(MacrophagesSOImmgen, 
+#               group.by = "Immgen.main", 
+#               split.by = "treatment",
+#               ncol = 2,
+#               cols = "steelblue")
+
+#selected_highlightI
+#selected_clusterI
+
+```
+
+### STEP 3. Recluster Macrophages (Ex. for MouseRNAseq)
+
+```{r}
+#| label: Recluster
+#| warning: FALSE
+#| include: FALSE
+
+#This step will recluster the subsetted macrophages SO from MouseRNAseq annotation for downstream breakdown of Macrophage cells and visualizations. There is no visual output.
+
+DefaultAssay(MacrophagesSO) <- "SCT" #Edit name of SO only for all lines
+
+set.seed(42)
+MacrophagesSO <- RunPCA(MacrophagesSO, npcs = 30, seed.use = 42)                   
+MacrophagesSO <- FindNeighbors(MacrophagesSO, dims = 1:30)          
+MacrophagesSO <- FindClusters(MacrophagesSO, resolution = seq(0.2,1.2,0.2))
+MacrophagesSO <- RunUMAP(MacrophagesSO, reduction = "pca", dims = 1:30, seed.use = 42)
+```
+
+#### A. UMAPS of reclustered cells
+
+```{r}
+#| label: UMAPS
+## Plot by resolution; change the resolution for clustering of cell type
+dimplot1 <- DimPlot(MacrophagesSO,
+        group.by='SCT_snn_res.0.4',
+        reduction='umap',
+        cols=cbf_3,
+        label=FALSE, 
+        pt.size = 0.001) +
+ labs(title = "UMAP by res 0.4")
+
+dimplot1
+
+## Plot by resolution per treatment; change the resolution for clustering of cell type
+dimplot2 <- DimPlot(MacrophagesSO,
+        group.by='SCT_snn_res.0.4',
+        split.by = 'treatment',
+        ncol = 2,
+        reduction='umap',
+        cols=cbf_3,
+        label=FALSE,
+        pt.size = 0.5) +
+ labs(title = "UMAP by res 0.4")
+
+dimplot2
+
+## Plot by treatment only
+dimplot3 <- DimPlot(MacrophagesSO,
+        group.by ='treatment',
+        reduction ='umap',
+        cols = treatment_colors,
+        label = FALSE) +
+ labs(title = "By treatment")
+
+dimplot3
+```
+
+#### B. Macrophage cell clusters heatmap and dotplot
+
+```{r}
+#| label: Macrophage cell clusters heatmap
+#| warning: FALSE
+#| message: FALSE
+
+#Helpful visual if you are identifying clusters and also prepares your cell SO for differential expression annalysis below.  
+Macrophage_cells = PrepSCTFindMarkers(MacrophagesSO, assay = "SCT")
+
+Idents(Macrophage_cells) = "SCT_snn_res.0.4"
+
+table(Idents(Macrophage_cells)) #table of counts per cluster
+
+de_allClusters = FindAllMarkers(Macrophage_cells, test.use="wilcox", min.pct=0.1, only.pos=TRUE) #This gives gene expression markers for all identity classes which in this case will be your clusters.
+
+head(de_allClusters)
+
+#Create heatmap for clusters
+topN <- 5   # top markers per cluster (editable)
+clusters <- sort(unique(de_allClusters$cluster))
+
+topPerCluster <- de_allClusters[0, ]  # empty df with same columns (names or types) as de_allClusters
+
+for (i in clusters) {
+  topPerCluster <- rbind(
+    topPerCluster,
+    head(de_allClusters[de_allClusters$cluster == i, ], topN)
+  )
+}
+
+topPerCluster
+
+DoHeatmap(Macrophage_cells,features = topPerCluster$gene, slot="scale.data") +
+  theme(
+    axis.text.x = element_text(size = 8),
+    axis.text.y = element_text(size = 8))
+
+DotPlot(Macrophage_cells, features = unique(topPerCluster$gene), dot.scale = 2) + coord_flip() +
+    theme(
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 6))
+```
+
+#### C. Genes by cluster (violin)
+
+```{r}
+#| label: Cluster genes
+#| warning: FALSE
+#| message: FALSE
+
+# Downstream analysis for identifying clusters and visualizing resolution genes so that you can change the resolution in the chunk above if subsets are not clearly defined. Edit genes and resolution as needed.
+Cluster_genes <- VlnPlot(MacrophagesSO,
+        features=c("Mrc1", "Nos2", "Cxcl9", "Arg1"),
+        group.by='SCT_snn_res.0.4',
+        stack=TRUE,
+        flip=TRUE)
+
+Cluster_genes
+
+#Get quick counts for clusters. Edit resolution as needed.
+with(MacrophagesSO@meta.data, table(SCT_snn_res.0.4, treatment))
+
+genes <- c("Mrc1", "Nos2", "Cxcl9", "Arg1") #small list for ridge, violin and dot plots below.  Edit and test genes here.  
+
+#Check for genes of interest in clusters. Cluster in front is where gene is most expressed. Edit resolution as needed.  
+RidgePlot(MacrophagesSO, features = genes, same.y.lims = TRUE, sort = TRUE, group.by = "SCT_snn_res.0.4", slot = "data", ncol = 2, cols = cbf_3, log = TRUE)
+
+FeaturePlot(
+  MacrophagesSO,
+  features = genes,
+  cols = c("grey80","red3"),
+  pt.size = 0.1,
+  reduction = "umap",
+  keep.scale = "feature",
+  by.col = FALSE,
+  slot = "data",
+  ncol = 2
+)
+```
+### STEP 4. Treatment analysis and visualizations for Macrophages (Ex. for MouseRNAseq)
+In this section you can viusalize and quantify genes in Macrophages by treatment.
+
+#### A. Color by gene on reclustered Macrophage cells
+
+```{r}
+#| label: Color by gene
+# Color by gene on isolated Macrophages to help identify which clusters may be your cluster of interest.
+singleUMAP <- FeaturePlot(
+  MacrophagesSO,
+  features = c("Cd163", "Tnf", "Mrc1", "Nos2", "Cxcl9", "Arg1"),
+  cols = c("grey80","red3"),
+  pt.size = 0.1,
+  split.by = "treatment",
+  reduction = "umap",
+  keep.scale = "feature",
+  by.col = FALSE,
+  slot = "data",
+  ncol = 2
+)
+
+singleUMAP
+```
+
+#### B. Gene visualizations for Macrophages (Ex. for MouseRNAseq) by treatment
+
+```{r}
+#| label: Visualizations of gene expression by macrophages
+#| warning: FALSE
+#| message: FALSE
+
+# Here you have various plotting options for viewing gene expression of subsetted Macrophages. You can use the vector created earlier (genes) or create a new set of genes of interest.
+
+RidgePlot(MacrophagesSO, features = genes, same.y.lims = TRUE, sort = TRUE, group.by = "treatment", slot = "data", ncol = 2, cols = treatment_colors, log = TRUE) #highest expressing group will be in the front.
+
+# Violin plots of genes within CD8+ T cells
+VlnPlot(MacrophagesSO, features = genes, group.by = "treatment", same.y.lims = TRUE, slot = "data", ncol = 2, cols = treatment_colors) 
+  #+ geom_hline(yintercept=1,color="red") #Add this if you'd like a line
+
+# Basic dot plot of genes within CD8+ T cells
+DotPlot(MacrophagesSO, features = genes, assay = 'SCT', cols = c("darkblue", "red2"), group.by = "treatment", scale.by = 'size') +
+  theme_minimal()
+
+genes2 <- c("Cd274", "Fcgr4", "Fcgr3", "Ccl3", "Ccl4", "Ly6a", "Itgam", "Itgal", "Cxcr4", "Tnf", "Ccr7", "Tnfsf13b") #larger list for ridge, violin and dot plots below.  Edit and test genes here.  
+VlnPlot(MacrophagesSO, features=genes2, group.by='treatment', cols=cbf_3, stack=TRUE, flip=TRUE)
+
+DotPlot(MacrophagesSO, features = genes2, assay = 'SCT', cols = c("darkblue", "red2"), group.by = "treatment", scale.by = 'size') +
+  theme_light() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), # try 60 or 90 if needed
+    axis.title.x = element_text(margin = margin(t = 8))           # a little breathing room
+  )
+
+```
+
+#### C. Quantification of gene-positive cells per treatment 
+
+```{r}
+#| label: Table of gene expression counts and percent expression by treatment
+#| warning: FALSE
+#| message: FALSE
+
+mat <- GetAssayData(MacrophagesSO, layer="counts", assay="RNA")
+
+n_total <- table(MacrophagesSO$treatment)
+
+# Here R is using the genes assigned earlier to the vector titled "genes" to create a table for those genes that includes their counts per treatment and percent expression 
+gene_counts <- sapply(genes, function(g) table(MacrophagesSO$treatment[mat[g, ] > 0]))
+gene_counts <- gene_counts[rownames(n_total), , drop=FALSE]  # align rows
+
+gene_percent <- sweep(gene_counts, 1, n_total, "/") * 100
+
+list(
+  gene_counts = gene_counts,
+  gene_percent = round(gene_percent, 1)
+)
+```
+
+#### D. Differential expression analysis by treatment group
+
+```{r}
+#| label: DEG
+Idents(MacrophagesSO) <- "treatment"
+#| warning: FALSE
+#| message: FALSE
+#| echo: FALSE
+
+# How many cells per group?
+Idents(Macrophage_cells) <- "treatment"
+table(Idents(Macrophage_cells))
+
+#Change contrasts as needed
+DEG_list <- FindMarkers(Macrophage_cells, #This gives gene expression markers for all treatments.
+              ident.1 = "G4",
+              ident.2 = "G1",
+              test.use = "wilcox",
+              #latent.vars = c("nCount_RNA","percent.mt"), # no covariates
+              min.pct = 0.2, # Drops ultra-rare genes that are mostly zeros; will pass if that gene is ≥25% in any group
+              min.diff.pct = 0.02, # Drops genes with small absolute difference between groups (i.e. 10% vs 12% will get dropped but will keep if 10% vs 15% in G1 vs G2; keep at 0.02-0.05)
+              min.cells.feature = 3,  # absolute gate (min in either group)
+              logfc.threshold = 0,
+              #verbose = FALSE,
+              slot = "data")  # test all genes
+
+# Save the original DEG table (records)
+write.csv(DEG_list, "DEG_G4_vs_G1.csv", row.names = TRUE)
+
+# Create a version for volcano plots below
+DEG_volcano <- DEG_list |>
+  tibble::rownames_to_column(var = "Gene") |>
+  dplyr::select(-c(4, 5))  # drop columns D-E by position
+```
+
+#### E. Prepare file for volcano
+
+```{r}
+#| label: Prepare data for volcano
+
+# Ensure you have a data frame with 'log2FC', 'pvalue', and 'gene' columns
+# Exclude ribosomal genes, gm-genes, and mitochondrial genes.
+volcano_clean <- subset(
+  DEG_volcano,
+  !grepl("^Gm\\d+$", Gene, perl = TRUE) &                # predicted gene models like Gm12345
+  !grepl("Rik$",    Gene) &                 # RIKEN cDNA names, e.g. 1700019G24Rik
+  !grepl("^(Rps|Rpl)", Gene, ignore.case=TRUE) &  # ribosomal
+  !grepl("^mt-",      Gene, ignore.case=TRUE)     # mitochondrial
+)
+
+# assign colnames 
+volcano_clean <- volcano_clean |>
+  dplyr::rename(
+    log2FoldChange = "avg_log2FC",     
+    pvalue = "p_val",                   
+    padj = "p_val_adj"                   
+    )
+    
+```
+
+#### F. Create Volcano Plot
+
+```{r}
+#| label: Volcano plot
+#| warning: FALSE
+#| message: FALSE
+
+MACG4_G1 <- EnhancedVolcano(volcano_clean,
+    lab = volcano_clean$Gene,
+    selectLab = c('Ly6c2', 'H2-Oa', 'H2-Ob', 'Cxcl2', 'Cxcl9', 'Fcgr4', 'Il12rb1', 'Ccr1', 'Ccr5', 'H2-Aa',  'Ccl5', 'Cxcl10', 'Cd274', 'H2-DMb2', 'Ly6a', 'Irf1'),
+    x = 'log2FoldChange',
+    y = 'pvalue',
+    xlim =c(-2.5, 2.5),
+    ylim = c(0,155),
+    borderWidth = 0.5,
+    title = 'G4 vs G1',
+    xlab = bquote(~Log[2]~ 'fold change'),
+    ylab = bquote(~-Log[10]~ 'p-value'),
+    pCutoff = 0.05,
+    FCcutoff = 0.263,
+    cutoffLineType = 'twodash',
+    cutoffLineWidth = 0.8,
+    pointSize = 0.05,
+    labSize = 3.0,
+    labCol = 'black',
+    #labFace = 'bold',
+    boxedLabels = FALSE,
+    parseLabels = FALSE,
+    col = c('gray40', 'green4', 'blue', 'red3'),
+    colAlpha = 1/2,
+    legendLabels=c('NS','Log (base 2) FC','p-value',
+      'p-value & Log (base 2) FC'),
+    legendPosition = 'right',
+    legendLabSize = 8,
+    legendIconSize = 2.0,
+    drawConnectors = TRUE,
+    max.overlaps = 20,
+    lengthConnectors = unit(0.01, "npc"),
+    widthConnectors = 0.5,
+    colConnectors = 'black',
+    #gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+)
+
+plot(MACG4_G1)
+
+```
+
