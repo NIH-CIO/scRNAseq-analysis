@@ -1273,6 +1273,49 @@
       "Author": "Martin Morgan [aut, cre] (ORCID: <https://orcid.org/0000-0002-5874-8148>)",
       "Maintainer": "Martin Morgan <mtmorgan.xyz@gmail.com>"
     },
+    "EnhancedVolcano": {
+      "Package": "EnhancedVolcano",
+      "Version": "1.26.0",
+      "Source": "Bioconductor",
+      "Type": "Package",
+      "Title": "Publication-ready volcano plots with enhanced colouring and labeling",
+      "Authors@R": "c( person(\"Kevin\", \"Blighe\", role = c(\"aut\", \"cre\"), email = \"kevin@clinicalbioinformatics.co.uk\"), person(\"Sharmila\", \"Rana\", role = c(\"aut\")), person(\"Emir\", \"Turkes\", role = c(\"ctb\")), person(\"Benjamin\", \"Ostendorf\", role = c(\"ctb\")), person(\"Andrea\", \"Grioni\", role = c(\"ctb\")), person(\"Myles\", \"Lewis\", role = c(\"aut\")))",
+      "Maintainer": "Kevin Blighe <kevin@clinicalbioinformatics.co.uk>",
+      "Description": "Volcano plots represent a useful way to visualise the results of differential expression analyses. Here, we present a highly-configurable function that produces publication-ready volcano plots. EnhancedVolcano will attempt to fit as many point labels in the plot window as possible, thus avoiding 'clogging' up the plot with labels that could not otherwise have been read. Other functionality allows the user to identify up to 4 different types of attributes in the same plot space via colour, shape, size, and shade parameter configurations.",
+      "License": "GPL-3",
+      "Depends": [
+        "ggplot2",
+        "ggrepel"
+      ],
+      "Imports": [
+        "methods"
+      ],
+      "Suggests": [
+        "ggalt",
+        "ggrastr",
+        "RUnit",
+        "BiocGenerics",
+        "knitr",
+        "DESeq2",
+        "pasilla",
+        "airway",
+        "org.Hs.eg.db",
+        "gridExtra",
+        "magrittr",
+        "rmarkdown"
+      ],
+      "URL": "https://github.com/kevinblighe/EnhancedVolcano",
+      "biocViews": "RNASeq, GeneExpression, Transcription, DifferentialExpression, ImmunoOncology",
+      "VignetteBuilder": "knitr",
+      "RoxygenNote": "7.1.2",
+      "git_url": "https://git.bioconductor.org/packages/EnhancedVolcano",
+      "git_branch": "RELEASE_3_21",
+      "git_last_commit": "e2756f5",
+      "git_last_commit_date": "2025-04-15",
+      "Repository": "Bioconductor 3.21",
+      "NeedsCompilation": "no",
+      "Author": "Kevin Blighe [aut, cre], Sharmila Rana [aut], Emir Turkes [ctb], Benjamin Ostendorf [ctb], Andrea Grioni [ctb], Myles Lewis [aut]"
+    },
     "EnsDb.Hsapiens.v86": {
       "Package": "EnsDb.Hsapiens.v86",
       "Version": "2.99.0",
@@ -2029,6 +2072,82 @@
       "Author": "Brian Ripley [aut, cre, cph], Bill Venables [aut, cph], Douglas M. Bates [ctb], Kurt Hornik [trl] (partial port ca 1998), Albrecht Gebhardt [trl] (partial port ca 1998), David Firth [ctb] (support functions for polr)",
       "Maintainer": "Brian Ripley <Brian.Ripley@R-project.org>",
       "Repository": "CRAN"
+    },
+    "MAST": {
+      "Package": "MAST",
+      "Version": "1.33.0",
+      "Source": "Bioconductor",
+      "Type": "Package",
+      "Title": "Model-based Analysis of Single Cell Transcriptomics",
+      "Date": "2023-04-20",
+      "Authors@R": "c(person(\"Andrew\", \"McDavid\", email = \"Andrew_McDavid@urmc.rochester.edu\", role = c(\"aut\", \"cre\")), person(\"Greg\", \"Finak\", email=\"gfinak@fredhutch.org\", role='aut'), person(\"Masanao\", \"Yajima\", email=\"myajima@fredhutch.org\", role='aut'))",
+      "VignetteBuilder": "knitr",
+      "Imports": [
+        "Biobase",
+        "BiocGenerics",
+        "S4Vectors",
+        "data.table",
+        "ggplot2",
+        "plyr",
+        "stringr",
+        "abind",
+        "methods",
+        "parallel",
+        "reshape2",
+        "stats",
+        "stats4",
+        "graphics",
+        "utils",
+        "SummarizedExperiment(>= 1.5.3)",
+        "progress",
+        "Matrix"
+      ],
+      "Depends": [
+        "SingleCellExperiment (>= 1.2.0)",
+        "R(>= 3.5)"
+      ],
+      "Suggests": [
+        "knitr",
+        "rmarkdown",
+        "testthat",
+        "lme4(>= 1.0)",
+        "blme",
+        "roxygen2(> 6.0.0)",
+        "numDeriv",
+        "car",
+        "gdata",
+        "lattice",
+        "GGally",
+        "GSEABase",
+        "NMF",
+        "TxDb.Hsapiens.UCSC.hg19.knownGene",
+        "rsvd",
+        "limma",
+        "RColorBrewer",
+        "BiocStyle",
+        "scater",
+        "DelayedArray",
+        "HDF5Array",
+        "zinbwave",
+        "dplyr"
+      ],
+      "Description": "Methods and models for handling zero-inflated single cell assay data.",
+      "License": "GPL(>= 2)",
+      "Collate": "'AllGenerics.R' 'AllClasses.R' 'CovFromBoots.R' 'Fluidigm-methods.R' 'GSEA-by-boot.R' 'Hypothesis.R' 'LmWrapper.R' 'MAST-package.R' 'MultidimensionalScaling.R' 'RNASeqAssay-methods.R' 'Readers.R' 'SingleCellAssay-methods.R' 'UtilityFunctions.R' 'ZlmFit-bootstrap.R' 'ZlmFit-logFC.R' 'ZlmFit.R' 'bayesglm.R' 'convertMASTClassic.R' 'ebayes-helpers.R' 'filterEval.R' 'helper-methods.R' 'lmWrapper-bayesglm.R' 'lmWrapper-glm.R' 'lmWrapper-glmer.R' 'lmWrapper-ridge.R' 'lrtest.R' 'predict.R' 'stat_ell.R' 'thresholdSCRNA.R' 'zeroinf.R' 'zlmHooks.R'",
+      "RoxygenNote": "7.2.3",
+      "LazyData": "true",
+      "biocViews": "GeneExpression, DifferentialExpression, GeneSetEnrichment, RNASeq, Transcriptomics, SingleCell",
+      "BugReports": "https://github.com/RGLab/MAST/issues",
+      "URL": "https://github.com/RGLab/MAST/",
+      "Encoding": "UTF-8",
+      "git_url": "https://git.bioconductor.org/packages/MAST",
+      "git_branch": "devel",
+      "git_last_commit": "35654e5",
+      "git_last_commit_date": "2024-10-29",
+      "Repository": "Bioconductor 3.21",
+      "NeedsCompilation": "no",
+      "Author": "Andrew McDavid [aut, cre], Greg Finak [aut], Masanao Yajima [aut]",
+      "Maintainer": "Andrew McDavid <Andrew_McDavid@urmc.rochester.edu>"
     },
     "Matrix": {
       "Package": "Matrix",
@@ -3876,6 +3995,27 @@
       "Biarch": "true",
       "Author": "Jeroen Ooms [aut, cre] (ORCID: <https://orcid.org/0000-0002-4035-0289>), Jan Marvin Garbuszus [ctb]",
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
+      "Repository": "CRAN"
+    },
+    "WriteXLS": {
+      "Package": "WriteXLS",
+      "Version": "6.8.0",
+      "Source": "Repository",
+      "Date": "2025-05-22",
+      "Title": "Cross-Platform Perl Based R Function to Create Excel 2003 (XLS) and Excel 2007 (XLSX) Files",
+      "Description": "Cross-platform Perl based R function to create Excel 2003 (XLS) and Excel 2007 (XLSX) files from one or more data frames. Each data frame will be written to a separate named worksheet in the Excel spreadsheet. The worksheet name will be the name of the data frame it contains or can be specified by the user.",
+      "Authors@R": "c(person(given = \"Marc\", family = \"Schwartz\", role = c(\"aut\", \"cre\"), email = \"marc_schwartz@me.com\"), person(given = c(\"Various authors for Perl modules listed in each .pm\"), family = \"file.\", role = \"aut\"))",
+      "Copyright": "The copyright holders of the Perl files are listed in each .pm file under the Perl directory.",
+      "License": "GPL (>= 2)",
+      "SystemRequirements": "Perl",
+      "Imports": [
+        "utils"
+      ],
+      "URL": "https://github.com/marcschwartz/WriteXLS",
+      "BugReports": "https://github.com/marcschwartz/WriteXLS/issues",
+      "NeedsCompilation": "no",
+      "Author": "Marc Schwartz [aut, cre], Various authors for Perl modules listed in each .pm file. [aut]",
+      "Maintainer": "Marc Schwartz <marc_schwartz@me.com>",
       "Repository": "CRAN"
     },
     "XML": {
@@ -6349,6 +6489,37 @@
       "Maintainer": "Olaf Mersmann <olafm@p-value.net>",
       "Repository": "CRAN"
     },
+    "enrichR": {
+      "Package": "enrichR",
+      "Version": "3.4",
+      "Source": "Repository",
+      "Title": "Provides an R Interface to 'Enrichr'",
+      "Authors@R": "person(\"Wajid\", \"Jawaid\", email = \"wajid.jawaid@gmail.com\", role = c(\"aut\", \"cre\"))",
+      "Description": "Provides an R interface to all 'Enrichr' databases. 'Enrichr' is a web-based tool for analysing gene sets and returns any enrichment of common annotated biological features. Quoting from their website 'Enrichment analysis is a computational method for inferring knowledge about an input gene set by comparing it to annotated gene sets representing prior biological knowledge.' See <https://maayanlab.cloud/Enrichr/> for further details.",
+      "Depends": [
+        "R (>= 3.5.0)"
+      ],
+      "License": "GPL (>= 2)",
+      "Encoding": "UTF-8",
+      "LazyData": "true",
+      "Imports": [
+        "httr",
+        "curl",
+        "rjson",
+        "ggplot2",
+        "WriteXLS"
+      ],
+      "RoxygenNote": "7.3.2",
+      "Suggests": [
+        "knitr",
+        "rmarkdown"
+      ],
+      "VignetteBuilder": "knitr",
+      "NeedsCompilation": "no",
+      "Author": "Wajid Jawaid [aut, cre]",
+      "Maintainer": "Wajid Jawaid <wajid.jawaid@gmail.com>",
+      "Repository": "CRAN"
+    },
     "ensembldb": {
       "Package": "ensembldb",
       "Version": "2.32.0",
@@ -7999,6 +8170,28 @@
       "NeedsCompilation": "yes",
       "Author": "David Schoch [aut, cre] (<https://orcid.org/0000-0003-2952-4812>)",
       "Maintainer": "David Schoch <david@schochastics.net>",
+      "Repository": "CRAN"
+    },
+    "gridBase": {
+      "Package": "gridBase",
+      "Version": "0.4-7",
+      "Source": "Repository",
+      "Title": "Integration of base and grid graphics",
+      "Author": "Paul Murrell",
+      "Depends": [
+        "R (>= 2.3.0)"
+      ],
+      "Imports": [
+        "graphics",
+        "grid"
+      ],
+      "Suggests": [
+        "lattice"
+      ],
+      "Description": "Integration of base and grid graphics",
+      "Maintainer": "Paul Murrell <paul@stat.auckland.ac.nz>",
+      "License": "GPL",
+      "NeedsCompilation": "no",
       "Repository": "CRAN"
     },
     "gridExtra": {
@@ -13576,6 +13769,33 @@
       "NeedsCompilation": "yes",
       "Author": "Emil Hvitfeldt [aut, cre] (ORCID: <https://orcid.org/0000-0002-0679-1945>), Davis Vaughan [ctb], Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>)",
       "Maintainer": "Emil Hvitfeldt <emil.hvitfeldt@posit.co>",
+      "Repository": "CRAN"
+    },
+    "spatial": {
+      "Package": "spatial",
+      "Version": "7.3-18",
+      "Source": "Repository",
+      "Priority": "recommended",
+      "Date": "2025-01-01",
+      "Depends": [
+        "R (>= 3.0.0)",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "Suggests": [
+        "MASS"
+      ],
+      "Authors@R": "c(person(\"Brian\", \"Ripley\", role = c(\"aut\", \"cre\", \"cph\"), email = \"Brian.Ripley@R-project.org\"), person(\"Roger\", \"Bivand\", role = \"ctb\"), person(\"William\", \"Venables\", role = \"cph\"))",
+      "Description": "Functions for kriging and point pattern analysis.",
+      "Title": "Functions for Kriging and Point Pattern Analysis",
+      "LazyLoad": "yes",
+      "ByteCompile": "yes",
+      "License": "GPL-2 | GPL-3",
+      "URL": "http://www.stats.ox.ac.uk/pub/MASS4/",
+      "NeedsCompilation": "yes",
+      "Author": "Brian Ripley [aut, cre, cph], Roger Bivand [ctb], William Venables [cph]",
+      "Maintainer": "Brian Ripley <Brian.Ripley@R-project.org>",
       "Repository": "CRAN"
     },
     "spatstat.data": {
