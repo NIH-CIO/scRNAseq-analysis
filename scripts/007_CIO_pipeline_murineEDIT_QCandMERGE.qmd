@@ -425,6 +425,8 @@ cell_counts <- dplyr::left_join(cells_pre, cells_post, by = "treatment") |>
 
 cell_counts
 
+rm(cells_pre, cells_post)
+
 ```
 
 ## STEP 5: Merge SO 
