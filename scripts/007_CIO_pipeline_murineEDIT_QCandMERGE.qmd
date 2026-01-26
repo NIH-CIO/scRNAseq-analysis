@@ -557,8 +557,19 @@ clustertree
 ## STEP 7: Single gene UMAPS
 
 ```{r}
-#| label: feature-plots-known-marker-genes
+#| label: featureplot_split
 #| fig-cap: 'UMAPs of expression levels of selected marker genes'
+
+singleUMAP <- FeaturePlot(
+  merged,
+  features = c("Cd3d", "Cd8a", "Cd4"), # edit as needed; will help in identifying which cell types are expressing what gene
+  cols = c("grey90","navyblue"),
+  pt.size = 0.1,
+  split.by = "treatment",
+  keep.scale = "all",
+  by.col = FALSE,
+  ncol = 2
+)
 
 singleUMAPfigure <- wrap_plots(singleUMAP) +
   plot_layout(guides = "collect") &   # <— collects into one legend
@@ -578,7 +589,9 @@ singleUMAPfigure <- wrap_plots(singleUMAP) +
     axis.text    = element_text(size = 10)
   )
 
-singleUMAPfigure
+print(singleUMAPfigure)
+invisible(singleUMAP) 
+
 
 #Get quick counts by genes
 genes <- c("Cd3d","Cd8a","Cd4","Adgre1", "Cd19", "Ncr1", "Ly6g")
