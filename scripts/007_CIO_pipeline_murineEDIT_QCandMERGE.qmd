@@ -533,11 +533,11 @@ dimplot3
 
 # this will help you select cluster resolution a bit.  Cell types should be unique to each cluster as much as possible; add genes as you prefer.
 Cluster_genes <- VlnPlot(merged,
-        features=c('Cd3e', 'Cd8a', 'Cd8b1', 'Cd4', 'Foxp3', 'Cd19', 'Ncr1', 'Nos2', 'Adgre1', 'Mrc1', 'Clec9a'),
+        features=c('Cd3e', 'Cd8a', 'Cd8b1', 'Cd4', 'Foxp3', 'Cd19', 'Ncr1', 'Nos2', 'Ly6g', 'Mrc1', 'Clec9a'),
         group.by='SCT_snn_res.0.4',
         cols=cbf_3,
         stack=TRUE,
-        flip=TRUE)
+        flip=TRUE) + theme(legend.position = "none")
 
 Cluster_genes
 
@@ -547,7 +547,7 @@ with(merged@meta.data, table(SCT_snn_res.0.4, treatment))
 
 ### C: Clustertree
 
-```{r}
+```{r, fig.width=12, fig.height=8}
 #| label: clustree
 #| fig-cap: 'Clustree from resolutions 0.2-1.2'
 
