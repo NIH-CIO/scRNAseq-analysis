@@ -6,3 +6,8 @@ python/
 sandbox/
 staging/
 ._.DS_Store
+.DS_Store
+._.DS_Store
+**/.DS_Store
+**/._.DS_Store
+packages-01-14.csv
