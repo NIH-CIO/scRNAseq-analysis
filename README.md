@@ -6,11 +6,14 @@
 **2.** Open a terminal in the graphical session and allocate an sinteractive job: <br>
 *sinteractive --nodes=1 --cpus-per-task=8 --mem=100G --gres=lscratch:200*
 
-**3.** Load the module with these two commands: <br>
+**3.** Navigate into your working directory: <br>
+*cd /data/NCI-CIO/username* <br>
+
+**4.** Load the module with these two commands: <br>
 *module use --append /data/NCI-CIO/scRNAseq-app/modulefiles* <br>
 *module load scRNAseq-app* <br>
 
-**4.** Start RStudio using the wrapper:  <br>
+**5.** Start RStudio using the wrapper:  <br>
 *app-rstudio* 
 
 

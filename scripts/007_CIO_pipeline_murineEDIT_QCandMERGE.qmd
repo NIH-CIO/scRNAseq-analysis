@@ -1,13 +1,7 @@
 ---
 title: "TRIAL_scRNAseq_PIPELINE"
 subtitle: "Murine edit"
-
-anotations:
-  author:
-  - name: "Christine Minnar"
-  - name: "Daniel Prins"
-  editor: "Christine Minnar"
-    
+   
 date: today
 date-format: "MM/DD/YYYY"
 
@@ -17,8 +11,6 @@ format:
   html:
     theme: cosmo
     fontawesome: true
-    code-fold: true
-    code-summary: "Show code"
     css: styles.css
     embed-resources: true
 
@@ -26,22 +18,21 @@ editor: source
 
 execute: 
   warning: false
-  echo: true
-  eval: true
-  
-freeze: auto
+  echo: false
+  freeze: auto
 ---
 
-## Basic scRNAseq analysis in R for multiple samples
+## INTRO: Basic scRNAseq analysis in R for multiple samples
 
 ### Purpose
 
-002_CIO_pipeline_SCTransform was adapted to create this basic **murine** data pipeline for multiple samples allowing a user with basic R skills to analyze 10X scRNAseq using Seurat. Required input files are cellranger output files (filtered_counts.h5), as will typically be received from a sequencing facility (SCAF). **THIS IS A TRIAL-RUN WITH IN-HOUSE MURINE TUMOR DATASET**. This setup is heavily based upon the Seurat tutorial, available at https://satijalab.org/seurat/articles/pbmc3k_tutorial and adapted with NIDAP-style QC and visuals.
+The 002_CIO_pipeline_SCTransform was adapted to create this basic **murine** data pipeline for multiple samples allowing a user with basic R skills to analyze 10X scRNAseq using Seurat. Required input files are cellranger output files (filtered_feature_bc_matrix.h5), as will typically be received from a sequencing facility (SCAF). This setup is heavily based upon the Seurat tutorial, available at https://satijalab.org/seurat/articles/pbmc3k_tutorial and adapted with NIDAP-style QC and visuals.
 
-### STEP 1: Setup and load packages
+## STEP 1: Setup and load packages
 
 ```{r}
 #| label: Setup
+#| output: false
 
 #Load Packages
 library(Seurat)
@@ -51,7 +42,7 @@ library(tidyr)
 library(RColorBrewer)
 library(ggplot2)
 library(ggpubr)
-
+library(knitr)
 library(patchwork)
 library(SingleCellExperiment)
 library(BiocManager)
@@ -77,15 +68,13 @@ library(BiocParallel)
 
 options(Seurat.object.assay.calcn = TRUE)
 
-cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors that we can use for visualizations
-
-setwd("/gpfs/gsfs12/users/minnarcm/R/Project_Template1") ## set this to your data dir; see container directions
+cbf_3 <- dittoColors(reps = 10000, get.names=FALSE) ## generates a vector of color-blind friendly colors for visualizations
 ```
 
-### STEP 2: Load samples and create Seurat Objects (SO) and metadata
+## STEP 2: Load samples and create Seurat Objects (SO) and metadata
 
 ```{r}
-#| label: loading-data-and-generating-Seurats
+#| label: load_data_and_generate_SOs
 #| output: false
 
 ## This chunk is dedicated to loading your .h5 files and adding any additional metadata for analysis. The first sample has notes describing parts, remaining 3 samples can be edited as needed. 
@@ -135,13 +124,20 @@ obj4[['treatment']] <- 'G4'
 
 ```
 
-#### View column labels
+### View column labels
 ```{r}
-# Show QC metrics for the first 5 cells: allows you to see the metadata you've added per sample
-head(obj1@meta.data, 5)
-head(obj2@meta.data, 5)
-head(obj3@meta.data, 5)
-head(obj4@meta.data, 5)
+#| label: column_labels_check
+
+# Confirm metadata is all the same and show columns you've added per sample
+
+stopifnot(
+  identical(colnames(obj1@meta.data), colnames(obj2@meta.data)),
+  identical(colnames(obj1@meta.data), colnames(obj3@meta.data)),
+  identical(colnames(obj1@meta.data), colnames(obj4@meta.data))
+)
+
+cat("All samples have identical metadata columns.\n\n")
+print(colnames(obj1@meta.data))
 
 rm(T1)
 rm(T2)
@@ -149,9 +145,9 @@ rm(T3)
 rm(T4)
 ```
 
-### STEP 3: Prefilter QC
+## STEP 3: Prefilter QC
 
-#### A: violin plots
+### A: violin plots
 ```{r}
 #| label: QC-prefilter1
 #| fig-cap: "Violin plots"
@@ -197,7 +193,7 @@ QC_prefilter <- ggplot(df_long, aes(x = treatment, y = value, fill = treatment))
 QC_prefilter
 ```
 
-#### B: Alt violin plots 
+### B: Alt violin plots 
 
 ```{r}
 #| label: QC-prefilter1b
@@ -225,8 +221,7 @@ FeatureScatter(obj4, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
 
 ```
 
-
-#### C: Density plots
+### C: Density plots
 
 ```{r}
 #| label: QC-prefilter3
@@ -262,7 +257,7 @@ QC_density <- ggplot(df_long2, aes(x = value_plot, color = treatment)) +
 QC_density
 ```
 
-### STEP 4: Filter QC and drop doublets
+## STEP 4: Filter QC and drop doublets
 
 ```{r}
 #| label: QC-filter-metrics
@@ -355,7 +350,7 @@ obj3 <- filtered_objs$obj3
 obj4 <- filtered_objs$obj4
 ```
 
-#### A: Filtered violin plots
+### A: Filtered violin plots
 
 ```{r}
 #| label: Filtered_QC1
@@ -393,7 +388,7 @@ filtered_QC_violin <- ggplot(filtered_long, aes(x = treatment, y = value, fill =
 filtered_QC_violin
 ```
 
-#### B) Alt filtered violin plots
+### B) Alt filtered violin plots
 ```{r}
 #| label: Filtered_QC1b
 #| fig-cap: "Filtered Violin plots alt view"
@@ -415,7 +410,7 @@ FeatureScatter(obj4, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
   geom_smooth(method = 'lm')
 ```
 
-#### C: Filtered counts
+### C: Filtered counts
 
 ```{r}
 #| label: Filtered_QC3
@@ -430,9 +425,12 @@ cell_counts <- dplyr::left_join(cells_pre, cells_post, by = "treatment") |>
 
 cell_counts
 
+rm(cells_pre, cells_post)
+
 ```
 
-### STEP 5: Merge SO 
+## STEP 5: Merge SO 
+### No visual for this step
 ```{r}
 #| label: Merge_seurat_objects
 #| warning: false
@@ -452,35 +450,41 @@ rm(obj1, obj2, obj3, obj4, objs, filtered_objs, df, df_list, df_long, df_long2, 
 gc()
 ```
 
-### STEP 6: SCTransform
+## STEP 6: SCTransform
 
 ```{r}
 #| label: SCTransform
 #| warning: false
-#| results: 'hide'
 #| message: false
 
 options(future.globals.maxSize = 3 * 1024^3) ## set globals.maxSize to 2GB for merged objs
 
 DefaultAssay(merged) <- "RNA"
 merged <- SCTransform(merged, 
-                      #vars.to.regress = "percent.mt", # Add if needed; if mito or cell cycle is expected biologically (stress,                                                            activation, proliferation), don’t regress it.
+                      #vars.to.regress = "percent.mt", # Add if needed; if mito or cell cycle is expected biologically (stress, activation, proliferation), don’t regress it.
                       do.correct.umi = TRUE,
                       conserve.memory = TRUE,
                       return.only.var.genes = TRUE,
                       verbose = FALSE)
                       
-
 DefaultAssay(merged) <- "SCT"
 set.seed(42)
-merged <- RunPCA(merged, npcs = 30, seed.use = 42)                   
-merged <- FindNeighbors(merged, dims = 1:30)          
+merged <- RunPCA(merged, npcs = 30, seed.use = 42) 
+
+ElbowPlot(merged, ndims = 50) # use this to select dims
+```
+
+```{r}
+#| label: Clustering
+#| include: false
+
+merged <- FindNeighbors(merged, dims = 1:20)          
 merged <- FindClusters(merged, resolution = seq(0.2,1.2,0.2)) #Edit if you need to change resolution (min, max, split by)
-merged <- RunUMAP(merged, reduction = "pca", dims = 1:30, seed.use = 42)
+merged <- RunUMAP(merged, reduction = "pca", dims = 1:20, seed.use = 42)
 #merged <- RunTSNE(merged, reduction = "pca", dim.embed = 2, dims = 1:30, seed.use = 1) # optional if you want to see TSNE
 ```
 
-#### A: Clustered UMAPS
+### A: Clustered UMAPS
 
 ```{r}
 #| label: Clustered_UMAPS_1
@@ -521,7 +525,7 @@ dimplot3
 # These all provide clustering of cell types and density by treatment group.
 ```
 
-#### B: Cluster genes by violin plot
+### B: Cluster genes by violin plot
 
 ```{r}
 #| label: violin_plots_known_marker_genes
@@ -529,11 +533,11 @@ dimplot3
 
 # this will help you select cluster resolution a bit.  Cell types should be unique to each cluster as much as possible; add genes as you prefer.
 Cluster_genes <- VlnPlot(merged,
-        features=c('Cd3e', 'Cd8a', 'Cd8b1', 'Cd4', 'Foxp3', 'Cd19', 'Ncr1', 'Nos2', 'Adgre1', 'Mrc1', 'Clec9a'),
+        features=c('Cd3e', 'Cd8a', 'Cd8b1', 'Cd4', 'Foxp3', 'Cd19', 'Ncr1', 'Nos2', 'Ly6g', 'Mrc1', 'Clec9a'),
         group.by='SCT_snn_res.0.4',
         cols=cbf_3,
         stack=TRUE,
-        flip=TRUE)
+        flip=TRUE) + theme(legend.position = "none")
 
 Cluster_genes
 
@@ -541,9 +545,9 @@ Cluster_genes
 with(merged@meta.data, table(SCT_snn_res.0.4, treatment))
 ```
 
-#### C: Clustertree
+### C: Clustertree
 
-```{r}
+```{r, fig.width=12, fig.height=8}
 #| label: clustree
 #| fig-cap: 'Clustree from resolutions 0.2-1.2'
 
@@ -552,10 +556,10 @@ clustertree <- clustree(merged, prefix = "SCT_snn_res.") # another tool to assis
 clustertree
 ```
 
-### STEP 7: Single gene UMAPS
+## STEP 7: Single gene UMAPS
 
 ```{r}
-#| label: feature-plots-known-marker-genes
+#| label: featureplot_split
 #| fig-cap: 'UMAPs of expression levels of selected marker genes'
 
 singleUMAP <- FeaturePlot(
@@ -568,8 +572,6 @@ singleUMAP <- FeaturePlot(
   by.col = FALSE,
   ncol = 2
 )
-
-singleUMAP
 
 singleUMAPfigure <- wrap_plots(singleUMAP) +
   plot_layout(guides = "collect") &   # <— collects into one legend
@@ -589,7 +591,9 @@ singleUMAPfigure <- wrap_plots(singleUMAP) +
     axis.text    = element_text(size = 10)
   )
 
-singleUMAPfigure
+print(singleUMAPfigure)
+invisible(singleUMAP) 
+
 
 #Get quick counts by genes
 genes <- c("Cd3d","Cd8a","Cd4","Adgre1", "Cd19", "Ncr1", "Ly6g")
@@ -599,7 +603,7 @@ counts
 
 ```
 
-### STEP 8: SingleR Cell types
+## STEP 8: SingleR Cell types
 
 ```{r}
 #| label: singler
@@ -631,7 +635,7 @@ merged$Immgen.main <- singler_results2$labels
 
 ```
 
-#### A: Immgen and MouseRNAseq annotations
+### A: Immgen and MouseRNAseq annotations
 
 ```{r}
 #| label: umap-singler1
@@ -662,7 +666,7 @@ with(merged@meta.data, table(MouseRNAseq.main, treatment))
 with(merged@meta.data, table(Immgen.main, treatment))
 ```
 
-#### B: Immgen and MouseRNAseq quantifications
+### B: Immgen and MouseRNAseq quantifications
 
 ```{r}
 #| label: barchart-celldex1
@@ -700,7 +704,7 @@ Stacked <- dittoBarPlot(merged,
 Stacked
 ```
 
-#### C: Top genes per cluster
+### C: Top genes per cluster
 
 ```{r}
 #| label: markers-res-01
@@ -731,18 +735,18 @@ top5.markers.01 <- markers.01 %>%
 Top5heatmap <- DoHeatmap(merged,
           features=top5.markers.01$gene, ## could replace this with a list of genes of interest
           group.by='SCT_snn_res.0.4',
-          group.colors=cbf_3) + NoLegend() + scale_fill_viridis() ## replacing default Seurat colors, which are ugly
+          group.colors=cbf_3) + 
+          NoLegend() + scale_fill_viridis_c() ## replacing default Seurat colors
 
 Top5heatmap
 
 ```
 
-
-### STEP 9: Save file for downstream analysis
+## STEP 9: Save file for downstream analysis
 ```{r}
 #| label: Save SO
 #| output: false
-#| echo: false
 
-SaveSeuratRds(merged, file='Output/mergedSO010926.rds')
+SaveSeuratRds(merged, file = paste0("Output/mergedSO_", Sys.Date(), ".rds") #confirm output folder or edit directory
+) ## will date your SO for records
 ```
