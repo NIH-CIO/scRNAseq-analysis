@@ -259,13 +259,45 @@ QC_density
 
 ## STEP 4: Filter QC and drop doublets
 
+### A: Drop doublets
+```{r}
+#| label: QC-remove-doublets
+#| results: 'hide'
+#| message: false
+#| warning: false
+
+minusdoublets_objs <- lapply(objs, function(obj) {
+  obj.sce <- as.SingleCellExperiment(obj)
+  bp <- MulticoreParam(3, RNGseed = 1234)
+  obj.sce <- scDblFinder(obj.sce, BPPARAM = bp)
+
+  obj$scDblFinder.score <- obj.sce$scDblFinder.score
+  obj$scDblFinder.class <- obj.sce$scDblFinder.class
+  rm(obj.sce)
+
+  # COUNTS BEFORE
+  print(table(factor(obj$scDblFinder.class, levels=c("singlet","doublet")), useNA="ifany"))
+
+  # Drop doublets
+  obj <- obj[, obj$scDblFinder.class != "doublet", drop=FALSE]
+
+  obj
+})
+
+sapply(minusdoublets_objs, function(o)
+  table(o$scDblFinder.class, useNA="ifany")
+)
+
+```
+
+### B: Filter QC 
 ```{r}
 #| label: QC-filter-metrics
 #| results: 'hide'
 #| message: false
 #| warning: false
 
-## FILTER SAMPLES (EDIT AS NEEDED HERE AFTER VIEWING VIOLIN PLOTS)
+## FILTER PARAMETERS (EDIT AS NEEDED HERE AFTER VIEWING VIOLIN PLOTS)
 # nCount_RNA
 ncounts.low         = NA
 ncounts.high        = NA
@@ -280,8 +312,8 @@ mad.nfeature.high   = 3
 
 # percent.mt
 mitoch.low          = NA
-mitoch.high         = 15
-mad.mitoch.low      = 3
+mitoch.high         = 20
+mad.mitoch.low      = NA
 mad.mitoch.high     = NA
 
 # log10GenesPerUMI
@@ -299,15 +331,14 @@ Thresholds <- function(metric, abs_low, abs_high, MAD_low, MAD_high) {
     high = if (!is.na(abs_high)) abs_high else if (!is.na(MAD_high)) m + MAD_high * d else  Inf
 )}
 
-filtered_objs <- lapply(objs, function(obj) {
+filtered_objs <- lapply(minusdoublets_objs, function(obj) {
   # 1) This step applies your thresholds per SO as a list form
   nC <- Thresholds(obj$nCount_RNA,       ncounts.low,    ncounts.high,    mad.ncounts.low,    mad.ncounts.high)
   nF <- Thresholds(obj$nFeature_RNA,     nfeature.low,   nfeature.high,   mad.nfeature.low,   mad.nfeature.high)
   mt <- Thresholds(obj$percent.mt,       mitoch.low,     mitoch.high,     mad.mitoch.low,     mad.mitoch.high)
   lG <- Thresholds(obj$log10GenesPerUMI, complexity.low, complexity.high, mad.complexity.low, mad.complexity.high)
-
  
- # 2) This steip keeps your cells that meet QC thresholds
+ # 2) This step keeps your cells that meet QC thresholds
   keep <-  (obj$nCount_RNA       >= nC["low"] & obj$nCount_RNA       <= nC["high"]) &
            (obj$nFeature_RNA     >= nF["low"] & obj$nFeature_RNA     <= nF["high"]) &
            (obj$percent.mt       >= mt["low"] & obj$percent.mt       <= mt["high"]) &
@@ -322,35 +353,13 @@ filtered_objs <- lapply(objs, function(obj) {
   obj_qc
 })
 
-# 4) You are creating a list of all of your filtered samples
-filtered_objs <- lapply(filtered_objs, function(obj_qc) {
-  obj.sce <- as.SingleCellExperiment(obj_qc)
-  bp <- MulticoreParam(3, RNGseed=1234)
-  obj.sce <- scDblFinder(obj.sce, BPPARAM=bp)
-
-  obj_qc$scDblFinder.score <- obj.sce$scDblFinder.score
-  obj_qc$scDblFinder.class <- obj.sce$scDblFinder.class
- 
-  rm(obj.sce)
-  
-   # >>> view singlets vs doublets BEFORE removal <<<
-  print(table(factor(obj_qc$scDblFinder.class, levels = c("singlet","doublet")),
-              useNA = "ifany"))
-  
-# 5) Drop doublets and apply filtered list to SOs
-  obj_qc[, obj_qc$scDblFinder.class != "doublet", drop = FALSE]
-})
-
-sapply(filtered_objs, function(o)
-+     table(FetchData(o, "scDblFinder.class")[,1], useNA = "ifany"))
-
 obj1 <- filtered_objs$obj1
 obj2 <- filtered_objs$obj2
 obj3 <- filtered_objs$obj3
 obj4 <- filtered_objs$obj4
 ```
 
-### A: Filtered violin plots
+### C: Filtered violin plots
 
 ```{r}
 #| label: Filtered_QC1
@@ -388,7 +397,8 @@ filtered_QC_violin <- ggplot(filtered_long, aes(x = treatment, y = value, fill =
 filtered_QC_violin
 ```
 
-### B) Alt filtered violin plots
+### D: Alt filtered violin plots
+
 ```{r}
 #| label: Filtered_QC1b
 #| fig-cap: "Filtered Violin plots alt view"
@@ -430,7 +440,8 @@ rm(cells_pre, cells_post)
 ```
 
 ## STEP 5: Merge SO 
-### No visual for this step
+
+There is no visual for this step.
 ```{r}
 #| label: Merge_seurat_objects
 #| warning: false
@@ -446,7 +457,7 @@ merged <- merge(
   project = "scRNAProject",
 )
 
-rm(obj1, obj2, obj3, obj4, objs, filtered_objs, df, df_list, df_long, df_long2, filtered_df, filtered_df_list, filtered_long, filtered_QC_violin)
+rm(obj1, obj2, obj3, obj4, objs, filtered_objs, minusdoublets_objs, df, df_list, df_long, df_long2, filtered_df, filtered_df_list, filtered_long, filtered_QC_violin)
 gc()
 ```
 
@@ -481,7 +492,7 @@ ElbowPlot(merged, ndims = 50) # use this to select dims
 merged <- FindNeighbors(merged, dims = 1:20)          
 merged <- FindClusters(merged, resolution = seq(0.2,1.2,0.2)) #Edit if you need to change resolution (min, max, split by)
 merged <- RunUMAP(merged, reduction = "pca", dims = 1:20, seed.use = 42)
-#merged <- RunTSNE(merged, reduction = "pca", dim.embed = 2, dims = 1:30, seed.use = 1) # optional if you want to see TSNE
+#merged <- RunTSNE(merged, reduction = "pca", dim.embed = 2, dims = 1:20, seed.use = 1) # optional if you want to see TSNE
 ```
 
 ### A: Clustered UMAPS
@@ -533,7 +544,7 @@ dimplot3
 
 # this will help you select cluster resolution a bit.  Cell types should be unique to each cluster as much as possible; add genes as you prefer.
 Cluster_genes <- VlnPlot(merged,
-        features=c('Cd3e', 'Cd8a', 'Cd8b1', 'Cd4', 'Foxp3', 'Cd19', 'Ncr1', 'Nos2', 'Ly6g', 'Mrc1', 'Clec9a'),
+        features=c('Cd3e', 'Cd8a', 'Cd8b1', 'Cd4', 'Foxp3', 'Cd19', 'Ncr1', 'Nos2', 'Mrc1', 'Ly6g', 'Clec9a'),
         group.by='SCT_snn_res.0.4',
         cols=cbf_3,
         stack=TRUE,
@@ -594,7 +605,6 @@ singleUMAPfigure <- wrap_plots(singleUMAP) +
 print(singleUMAPfigure)
 invisible(singleUMAP) 
 
-
 #Get quick counts by genes
 genes <- c("Cd3d","Cd8a","Cd4","Adgre1", "Cd19", "Ncr1", "Ly6g")
 counts <- t(rowsum(t((as.matrix(GetAssayData(merged, layer="data")[genes, ]) > 0) + 0),
@@ -605,6 +615,7 @@ counts
 
 ## STEP 8: SingleR Cell types
 
+There is no visual for this step.
 ```{r}
 #| label: singler
 #| output: false
@@ -722,8 +733,8 @@ markers.01 <- FindAllMarkers(
   merged,
   assay = "SCT",
   only.pos = TRUE,
-  logfc.threshold = 1.2,   
-  min.pct = 0.10
+  logfc.threshold = 0.1,   
+  min.pct = 0.25
 )
 
 # get top 5 per cluster by the FC column, whatever it's called in your Seurat
@@ -735,8 +746,10 @@ top5.markers.01 <- markers.01 %>%
 Top5heatmap <- DoHeatmap(merged,
           features=top5.markers.01$gene, ## could replace this with a list of genes of interest
           group.by='SCT_snn_res.0.4',
-          group.colors=cbf_3) + 
-          NoLegend() + scale_fill_viridis_c() ## replacing default Seurat colors
+          size = 4,
+          angle = 0,
+          group.colors=cbf_3) +                    ## replacing default Seurat colors
+          theme(axis.text.y = element_text(size = 4))
 
 Top5heatmap
 
