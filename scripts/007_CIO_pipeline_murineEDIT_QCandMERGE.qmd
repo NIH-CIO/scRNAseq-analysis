@@ -1,6 +1,6 @@
 ---
-title: "TRIAL_scRNAseq_PIPELINE"
-subtitle: "Murine edit"
+title: "scRNAseq_PIPELINE PART I"
+subtitle: "Murine edit: QC and merge Seurat Objects"
    
 date: today
 date-format: "MM/DD/YYYY"
