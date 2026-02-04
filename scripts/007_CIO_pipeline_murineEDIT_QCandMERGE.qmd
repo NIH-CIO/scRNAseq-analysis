@@ -26,7 +26,7 @@ execute:
 
 ### Purpose
 
-The 002_CIO_pipeline_SCTransform was adapted to create this basic **murine** data pipeline for multiple samples allowing a user with basic R skills to analyze 10X scRNAseq using Seurat. Required input files are cellranger output files (filtered_feature_bc_matrix.h5), as will typically be received from a sequencing facility (SCAF). This setup is heavily based upon the Seurat tutorial, available at https://satijalab.org/seurat/articles/pbmc3k_tutorial and adapted with NIDAP-style QC and visuals.
+The 002_CIO_pipeline_SCTransform was adapted to create this basic **murine** data pipeline for multiple samples allowing a user with basic R skills to analyze 10X scRNAseq using Seurat. Required input files are cellranger output files (filtered_feature_bc_matrix.h5), as will typically be received from a sequencing facility (SCAF). This setup is heavily based upon the [Seurat tutorial](https://satijalab.org/seurat/articles/pbmc3k_tutorial) and adapted with CCBR/NIDAP-style QC and visuals.
 
 ## STEP 1: Setup and load packages
 
